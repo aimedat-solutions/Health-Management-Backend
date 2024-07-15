@@ -1,7 +1,15 @@
-from django.urls import path
-from .views import PatientListCreateView, SectionDataView,CombinedSectionView,PatientDetailView,DoctorListCreateView,DoctorDetailView,UserEditView, UserListView, QuestionListCreateView, QuestionDetailView, CustomLoginView,UserRegistrationAPIView,LogoutAPIView
+from django.urls import path,include
+from rest_framework.routers import DefaultRouter
+from .views import PatientListCreateView, DietPlanViewSet,SectionDataView,CombinedSectionView,PatientDetailView,DoctorListCreateView,DoctorDetailView,UserEditView, UserListView, QuestionListCreateView, QuestionDetailView, CustomLoginView,UserRegistrationAPIView,LogoutAPIView
 app_name = 'users'
+
+
+router = DefaultRouter()
+router.register(r'diet-plans', DietPlanViewSet, basename='diet-plans')
+
 urlpatterns = [
+    path('', include(router.urls)),
+    path('diet-plans/<int:patient_id>/<str:selected_date>/', DietPlanViewSet.as_view({'get': 'retrieve'}), name='diet-plan-retrieve-date'),
     path('userdetail/', UserListView.as_view(), name='user-list'),
     path('userdetail/<int:pk>/', UserEditView.as_view(), name='user-list'),
     path('register/', UserRegistrationAPIView.as_view(), name='register'),

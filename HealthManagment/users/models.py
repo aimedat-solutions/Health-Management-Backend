@@ -45,6 +45,16 @@ class Doctor(models.Model):
 
     def __str__(self):
         return f'Doctor {self.user} - Specialty: {self.specialty}'
+    
+class DietPlan(models.Model):
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='diet_plans')
+    date = models.DateField()
+    diet_name = models.CharField(max_length=100)
+    time_of_day = models.CharField(max_length=50)  # e.g., "7am - 10am"
+    meal_plan = models.JSONField()
+    
+    def __str__(self):
+        return f"{self.diet_name} for {self.patient.first_name} on {self.date}"
 class SectionOneQuestions(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     work_involves_seasonal_activity = models.BooleanField(choices=[(True, 'Yes'), (False, 'No')])
