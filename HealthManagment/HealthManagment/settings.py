@@ -37,9 +37,13 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework.authtoken',
+    'django.contrib.sites',
+    'allauth',
+    'allauth.account',
     'dj_rest_auth',
     'drf_spectacular',
-    # 'rest_framework_simplejwt.token_blacklist',
+    'rest_framework_simplejwt', 
+    'rest_framework_simplejwt.token_blacklist',
     'users',
 ]
 
@@ -54,6 +58,9 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = 'HealthManagment.urls'
+
+SITE_ID = 1
+JWT_AUTH_COOKIE = 'allauth'
 
 TEMPLATES = [
     {
@@ -113,10 +120,10 @@ REST_FRAMEWORK = {
     'SEARCH_PARAM': 'q',
 }
 
-# SIMPLE_JWT = {
-#     'AUTH_HEADER_TYPES': ('Bearer',),
-#     'BLACKLIST_AFTER_ROTATION': True,
-# }
+SIMPLE_JWT = {
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'BLACKLIST_AFTER_ROTATION': True,
+}
 # Internationalization
 # https://docs.djangoproject.com/en/4.0/topics/i18n/
 

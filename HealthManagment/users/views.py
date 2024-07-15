@@ -1,12 +1,12 @@
 from rest_framework import generics, permissions
-from .models import Patient, Doctor, Question, CustomUser,SectionOneQuestions, SectionTwoQuestions, SectionThreeQuestions, SectionFourQuestions, SectionFiveQuestions
-from .serializers import PatientSerializer, DoctorSerializer, QuestionSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,CombinedSectionSerializer
+from .models import Patient, Doctor, Question,DietPlan, CustomUser,SectionOneQuestions, SectionTwoQuestions, SectionThreeQuestions, SectionFourQuestions, SectionFiveQuestions
+from .serializers import PatientSerializer, DietPlanSerializer,DoctorSerializer, QuestionSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,CombinedSectionSerializer
 from rest_framework import views, status
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from rest_framework.authtoken.models import Token
 from dj_rest_auth.views import LoginView
-from django.http import HttpResponse
+from datetime import date
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.authentication import authenticate
 from .decryption import decrypt_password
@@ -16,7 +16,8 @@ from django.contrib.auth import logout as django_logout
 from django.core.exceptions import ObjectDoesNotExist
 from drf_spectacular.utils import extend_schema
 from users.permissions import PermissionsManager
-
+from rest_framework import viewsets
+from rest_framework import serializers
 class UserRegistrationAPIView(APIView):
     serializer_class = UserRegistrationSerializer
     def post(self, request):
@@ -156,6 +157,43 @@ class DoctorDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = DoctorSerializer
     permission_classes = [PermissionsManager]
     codename = 'doctor'
+        
+class DietPlanViewSet(viewsets.ModelViewSet):
+    queryset = DietPlan.objects.all()
+    serializer_class = DietPlanSerializer
+    permission_classes = [PermissionsManager]
+    codename = 'doctor'
+
+    def perform_create(self, serializer):
+        patient_id = self.request.data.get('patient_id')
+        try:
+            patient = Patient.objects.get(id=patient_id)
+        except Patient.DoesNotExist:
+            raise serializers.ValidationError("Patient does not exist.")
+        serializer.save(patient=patient)
+    
+    def retrieve(self, request, patient_id, selected_date):
+        try:
+            # Convert selected_date to a date object
+            selected_date = date.fromisoformat(selected_date)
+            # Retrieve the diet plan for the specific date
+            diet_plan = DietPlan.objects.filter(patient_id=patient_id, date=selected_date)
+
+            if not diet_plan.exists():
+                return Response({"error": "Diet plan not found for the selected date."}, status=status.HTTP_404_NOT_FOUND)
+
+            serializer = DietPlanSerializer(diet_plan, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except ValueError:
+            return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+    # def get_queryset(self):
+    #     user = self.request.user
+    #     if hasattr(user, 'doctor' and 'admin'):
+    #         return DietPlan.objects.filter(patient__doctor=user.doctor)
+    #     return DietPlan.objects.none()
 
 class QuestionListCreateView(generics.ListCreateAPIView):
     queryset = Question.objects.all()
