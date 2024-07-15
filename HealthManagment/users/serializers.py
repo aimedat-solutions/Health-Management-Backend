@@ -3,7 +3,7 @@ from django.contrib.auth import authenticate
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
 from .utils import send_otp, verify_otp
-from .models import Doctor, Question, Patient, CustomUser, SectionOneQuestions, SectionTwoQuestions, SectionThreeQuestions, SectionFourQuestions, SectionFiveQuestions
+from .models import Doctor, Question, Patient,DietPlan, CustomUser, SectionOneQuestions, SectionTwoQuestions, SectionThreeQuestions, SectionFourQuestions, SectionFiveQuestions
 User = get_user_model()
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -141,6 +141,30 @@ class DoctorSerializer(serializers.ModelSerializer):
         user.save()
 
         return instance
+
+class DietPlanSerializer(serializers.ModelSerializer):
+    meal_plan = serializers.ListField(child=serializers.CharField())
+    class Meta:
+        model = DietPlan
+        fields = ['id', 'patient', 'date', 'diet_name', 'time_of_day', 'meal_plan']
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        patient = validated_data['patient']
+        doctor = request.user.doctor
+        if patient.doctor != doctor:
+            raise serializers.ValidationError("You can only create diet plans for your own patients.")
+        diet_plan = DietPlan.objects.create(**validated_data)
+        return diet_plan
+
+    def validate_meal_plan(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Meal plan must be a list of items.")
+        return value
+
+
+
+
 
 class QuestionSerializer(serializers.ModelSerializer):
     class Meta:
