@@ -1,8 +1,9 @@
 from rest_framework import generics, permissions
 from .models import Patient, Doctor, Question,DietPlan, CustomUser,SectionOneQuestions, SectionTwoQuestions, SectionThreeQuestions, SectionFourQuestions, SectionFiveQuestions
-from .serializers import PatientSerializer, DietPlanSerializer,DoctorSerializer, QuestionSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,CombinedSectionSerializer
+from .serializers import PatientSerializer, DietPlanSerializer,DoctorSerializer, QuestionSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,CombinedSectionSerializer,PhoneNumberSerializer
 from rest_framework import views, status
 from rest_framework.response import Response
+from rest_framework.generics import GenericAPIView
 from rest_framework.permissions import AllowAny
 from rest_framework.authtoken.models import Token
 from dj_rest_auth.views import LoginView
@@ -18,6 +19,7 @@ from drf_spectacular.utils import extend_schema
 from users.permissions import PermissionsManager
 from rest_framework import viewsets
 from rest_framework import serializers
+from .response_handler import success_response, error_response, SUCCESS_OTP_SENT, ERROR_USER_NOT_FOUND, ERROR_OTP_SEND_FAILED
 class UserRegistrationAPIView(APIView):
     serializer_class = UserRegistrationSerializer
     def post(self, request):
@@ -126,6 +128,41 @@ class LogoutAPIView(APIView):
                 response.status_code = status.HTTP_200_OK
         return response
 
+class SendOrResendSMSAPIView(GenericAPIView):
+    serializer_class = PhoneNumberSerializer
+    
+    """
+    API endpoint to send OTP to the user's phone number.
+    """
+    def post(self, request, *args, **kwargs):
+        encrypted_phone_number = request.data.get('phone_number')
+
+        decrypted_phone_number = decrypt_password(encrypted_phone_number)
+
+        # Construct decrypted data dictionary
+        decrypted_data = {
+            'phone_number': decrypted_phone_number,
+        }
+        serializer = self.get_serializer(data=decrypted_data)
+
+        if serializer.is_valid():
+            phone_number = str(serializer.validated_data['phone_number'])
+            user = CustomUser.objects.filter(
+                phone_number=phone_number, is_verified=False).first()
+            if user:
+                try:
+                    # Send OTP
+                    if user.send_confirmation():
+                        return success_response(SUCCESS_OTP_SENT, {"phone_number": phone_number})
+                    else:
+                        return error_response(ERROR_OTP_SEND_FAILED, code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+                except Exception as e:
+                    return error_response(str(e), code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            else:
+                return error_response(ERROR_USER_NOT_FOUND, code=status.HTTP_404_NOT_FOUND)
+
+        return error_response(serializer.errors, code=status.HTTP_400_BAD_REQUEST)
 class UserListView(generics.ListAPIView):
     queryset = CustomUser.objects.all()
     serializer_class = CustomUserDetailsSerializer
