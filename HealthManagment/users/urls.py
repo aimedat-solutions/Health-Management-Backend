@@ -1,6 +1,6 @@
 from django.urls import path,include
 from rest_framework.routers import DefaultRouter
-from .views import PatientListCreateView, DietPlanViewSet,SectionDataView,CombinedSectionView,PatientDetailView,DoctorListCreateView,DoctorDetailView,UserEditView, UserListView, QuestionListCreateView, QuestionDetailView, CustomLoginView,UserRegistrationAPIView,LogoutAPIView
+from .views import PatientListCreateView, SendOrResendSMSAPIView,DietPlanViewSet,SectionDataView,CombinedSectionView,PatientDetailView,DoctorListCreateView,DoctorDetailView,UserEditView, UserListView, QuestionListCreateView, QuestionDetailView, CustomLoginView,UserRegistrationAPIView,LogoutAPIView
 app_name = 'users'
 
 
@@ -14,6 +14,7 @@ urlpatterns = [
     path('userdetail/<int:pk>/', UserEditView.as_view(), name='user-list'),
     path('register/', UserRegistrationAPIView.as_view(), name='register'),
     path('login/', CustomLoginView.as_view(), name='login'),
+    path('send-sms/', SendOrResendSMSAPIView.as_view(), name='send-sms'),
     path('logout/', LogoutAPIView.as_view(), name='logout'),
     path('patients/', PatientListCreateView.as_view(), name='patient-list-create'),
     path('patients/<int:pk>/', PatientDetailView.as_view(), name='patient-detail'),
