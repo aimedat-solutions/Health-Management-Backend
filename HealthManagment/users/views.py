@@ -137,11 +137,11 @@ class SendOrResendSMSAPIView(GenericAPIView):
     def post(self, request, *args, **kwargs):
         encrypted_phone_number = request.data.get('phone_number')
 
-        # decrypted_phone_number = decrypt_password(encrypted_phone_number)
+        decrypted_phone_number = decrypt_password(encrypted_phone_number)
 
         # Construct decrypted data dictionary
         decrypted_data = {
-            'phone_number': encrypted_phone_number,
+            'phone_number': decrypted_phone_number,
         }
         serializer = self.get_serializer(data=decrypted_data)
 
