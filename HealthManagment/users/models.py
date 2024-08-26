@@ -50,7 +50,7 @@ class DietPlan(models.Model):
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='diet_plans')
     date = models.DateField()
     diet_name = models.CharField(max_length=100)
-    time_of_day = models.CharField(max_length=50)  # e.g., "7am - 10am"
+    time_of_day = models.CharField(max_length=50)  
     meal_plan = models.JSONField()
     
     def __str__(self):
