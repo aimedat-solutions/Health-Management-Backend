@@ -1,7 +1,13 @@
-
 from django.db import models
 from django.contrib.auth.models import User
+from django.conf import settings    
+import datetime
+import logging
 from phonenumber_field.modelfields import PhoneNumberField
+from django.utils import timezone
+from django.utils.crypto import get_random_string
+from users.utils import send_otp
+from django.core.exceptions import ValidationError
 
 class CustomUser(User):
     ROLE_CHOICES = [
@@ -12,9 +18,62 @@ class CustomUser(User):
     
     role = models.CharField(max_length=10, choices=ROLE_CHOICES)
     phone_number = PhoneNumberField(max_length=15, blank=True, null=True)
+    security_code = models.CharField(max_length=120, blank=True, null=True)
+    is_verified = models.BooleanField(default=False)
+    sent = models.DateTimeField(null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     
     def __str__(self):
         return f"{self.role} . {self.username}"
+    
+    def generate_security_code(self):
+        """ Generate a random security code (OTP). """
+        token_length = getattr(settings, "TOKEN_LENGTH", 6)
+        return get_random_string(token_length, allowed_chars="0123456789")
+
+    def is_security_code_expired(self):
+        """ Check if the security code has expired. """
+        expiration_date = self.sent + datetime.timedelta(minutes=settings.TOKEN_EXPIRE_MINUTES)
+        return expiration_date <= timezone.now()
+
+    def send_confirmation(self):
+        """ Generate and send OTP to the user's phone number. """
+        msg91_api_key = settings.MSG91_API_KEY
+        msg91_otp_template_id = settings.MSG91_OTP_TEMPLATE_ID
+
+        if all([msg91_api_key, msg91_otp_template_id]):
+            try:
+                self.security_code = self.generate_security_code()
+                self.sent = timezone.now()
+                self.save()
+
+                otp_response = send_otp(str(self.phone_number))  # Replace with your OTP sending logic
+
+                if otp_response.get("type") == "success":
+                    return True
+                else:
+                    logging.error(f"Failed to send OTP: {otp_response.get('message')}")
+                    return False
+            except Exception as e:
+                logging.error(f"Error while sending OTP: {e}")
+                return False
+        else:
+            logging.error("MSG91 credentials or OTP template ID are not set")
+            return False
+
+    def check_verification(self, security_code):
+        """ Check the OTP entered by the user. """
+        if security_code == self.security_code:
+            if not self.is_security_code_expired():
+                self.is_verified = True
+                self.security_code = None  # Clear the security code after verification
+                self.save()
+                return True
+            else:
+                raise ValidationError({"verification_error": _("OTP has expired. Please request a new OTP.")})
+        else:
+            raise ValidationError({"verification_error": _("Invalid OTP. Try again.")})
     
 class Patient(models.Model):
     HEALTH_STATUS = [
@@ -50,7 +109,7 @@ class DietPlan(models.Model):
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='diet_plans')
     date = models.DateField()
     diet_name = models.CharField(max_length=100)
-    time_of_day = models.CharField(max_length=50)  # e.g., "7am - 10am"
+    time_of_day = models.CharField(max_length=50)  
     meal_plan = models.JSONField()
     
     def __str__(self):
