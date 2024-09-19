@@ -55,6 +55,30 @@ class DietPlan(models.Model):
     
     def __str__(self):
         return f"{self.diet_name} for {self.patient.first_name} on {self.date}"
+    
+class Exercise(models.Model):
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='exercises')
+    exercise_name = models.CharField(max_length=255)
+    exercise_type = models.CharField(max_length=100, choices=[
+        ('strength', 'Strength Training'),
+        ('cardio', 'Cardio'),
+        ('flexibility', 'Flexibility'),
+        ('balance', 'Balance'),
+    ])
+    duration = models.DurationField()  # e.g., how long they did the exercise
+    intensity = models.CharField(max_length=50, choices=[
+        ('low', 'Low Intensity'),
+        ('medium', 'Medium Intensity'),
+        ('high', 'High Intensity'),
+    ])
+    calories_burned = models.PositiveIntegerField()
+    date = models.DateField()
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.exercise_name} by {self.user.username}"
 class SectionOneQuestions(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     work_involves_seasonal_activity = models.BooleanField(choices=[(True, 'Yes'), (False, 'No')])

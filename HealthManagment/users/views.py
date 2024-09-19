@@ -1,6 +1,6 @@
 from rest_framework import generics, permissions
-from .models import Patient, Doctor, Question,DietPlan, CustomUser,SectionOneQuestions, SectionTwoQuestions, SectionThreeQuestions, SectionFourQuestions, SectionFiveQuestions
-from .serializers import PatientSerializer, DietPlanSerializer,DoctorSerializer, QuestionSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,CombinedSectionSerializer
+from .models import Patient, Doctor, Question,DietPlan,Exercise, CustomUser,SectionOneQuestions, SectionTwoQuestions, SectionThreeQuestions, SectionFourQuestions, SectionFiveQuestions
+from .serializers import PatientSerializer,ExerciseSerializer, DietPlanSerializer,DoctorSerializer, QuestionSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,CombinedSectionSerializer
 from rest_framework import views, status
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
@@ -18,13 +18,22 @@ from drf_spectacular.utils import extend_schema
 from users.permissions import PermissionsManager
 from rest_framework import viewsets
 from rest_framework import serializers
+from rest_framework import generics
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import NotAuthenticated
+
 class UserRegistrationAPIView(APIView):
     serializer_class = UserRegistrationSerializer
     def post(self, request):
-        decrypted_data = {}
-        for field, value in request.data.items():
-            decrypted_data[field] = decrypt_password(value)
-        serializer = UserRegistrationSerializer(data=decrypted_data)
+        # The code snippet `decrypted_data = {}` initializes an empty dictionary to store decrypted
+        # data. The `for field, value in request.data.items():` loop iterates over each key-value pair
+        # in the `request.data` dictionary. For each pair, the value is decrypted using the
+        # `decrypt_password` function and then stored in the `decrypted_data` dictionary with the
+        # corresponding field as the key.
+        # decrypted_data = {}
+        # for field, value in request.data.items():
+        #     decrypted_data[field] = decrypt_password(value)
+        serializer = UserRegistrationSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
             refresh = RefreshToken.for_user(user)
@@ -42,10 +51,10 @@ class CustomLoginView(LoginView):
     serializer_class = UserLoginSerializer
     
     def post(self, request, *args, **kwargs):
-        decrypted_data = {}
-        for field, value in request.data.items():
-            decrypted_data[field] = decrypt_password(value)
-        serializer = self.get_serializer(data=decrypted_data)
+        # decrypted_data = {}
+        # for field, value in request.data.items():
+        #     decrypted_data[field] = decrypt_password(value)
+        serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
         refresh = RefreshToken.for_user(user)
@@ -237,3 +246,29 @@ class SectionDataView(APIView):
         context = {'section_type': section_type}
         serializer = CombinedSectionSerializer(instance, context=context)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+class ExerciseListCreateView(generics.ListCreateAPIView):
+    serializer_class = ExerciseSerializer
+    # permission_classes = [IsAuthenticated]
+    permission_classes = [PermissionsManager]
+    codename = 'exercise'
+
+    def get_queryset(self):
+        # Return only exercises for the authenticated user
+        return Exercise.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        # Link the exercise to the authenticated user
+        serializer.save(user=self.request.user)
+        
+    def permission_denied(self, request, message=None, code=None):
+        if not request.user or not request.user.is_authenticated:
+            raise NotAuthenticated(detail="Custom message: You are not authenticated. Please log in.")
+
+class ExerciseDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = ExerciseSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        # Ensure users can only access their own exercises
+        return Exercise.objects.filter(user=self.request.user) 
