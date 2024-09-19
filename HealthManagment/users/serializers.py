@@ -3,7 +3,7 @@ from django.contrib.auth import authenticate
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
 from .utils import send_otp, verify_otp
-from .models import Doctor, Question, Patient,DietPlan, CustomUser, SectionOneQuestions, SectionTwoQuestions, SectionThreeQuestions, SectionFourQuestions, SectionFiveQuestions
+from .models import Doctor, Question, Patient,DietPlan,Exercise, CustomUser, SectionOneQuestions, SectionTwoQuestions, SectionThreeQuestions, SectionFourQuestions, SectionFiveQuestions
 User = get_user_model()
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -72,7 +72,7 @@ class CustomUserDetailsSerializer(serializers.ModelSerializer):
 class CustomUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ['id', 'username', 'email', 'phone_number','password']
+        fields = ['id', 'username', 'email', 'role', 'phone_number','password']
         extra_kwargs = {'password': {'write_only': True}}
 
 class DoctorSerializer(serializers.ModelSerializer):
@@ -162,15 +162,35 @@ class DietPlanSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Meal plan must be a list of items.")
         return value
 
-
+class ExerciseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Exercise
+        fields = [
+            'id', 'user', 'exercise_name', 'exercise_type', 'duration', 
+            'intensity', 'calories_burned', 'date', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['user', 'created_at', 'updated_at']
 
 
 
 class QuestionSerializer(serializers.ModelSerializer):
+    section_display = serializers.SerializerMethodField()
+    question_code_display = serializers.SerializerMethodField()
+
     class Meta:
         model = Question
-        fields = '__all__'
-        
+        fields = [
+            'id', 'section', 'section_display', 'question_code', 'question_code_display', 
+            'question_text', 'is_seasonal', 'is_full_time', 'duration_years',
+            'duration_months', 'duration_weeks', 'hours_per_day', 'activity_type',
+            'activity_duration', 'created_at', 'updated_at'
+        ]
+    
+    def get_section_display(self, obj):
+        return dict(Question.SECTION_CHOICES).get(obj.section)
+
+    def get_question_code_display(self, obj):
+        return dict(Question.QUESTION_CHOICES).get(obj.question_code)
         
         
         
