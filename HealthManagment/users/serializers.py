@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth import get_user_model
+from phonenumber_field.serializerfields import PhoneNumberField
 from django.contrib.auth.models import Group, Permission
 from .utils import send_otp, verify_otp
 from .models import Doctor, Question, Patient,DietPlan,Exercise, CustomUser, SectionOneQuestions, SectionTwoQuestions, SectionThreeQuestions, SectionFourQuestions, SectionFiveQuestions
@@ -63,6 +64,12 @@ class UserLoginSerializer(serializers.Serializer):
         attrs['user'] = user
         return attrs
 
+class PhoneNumberSerializer(serializers.ModelSerializer):
+    phone_number = PhoneNumberField()
+
+    class Meta:
+        model = CustomUser
+        fields = ('phone_number',)
 class CustomUserDetailsSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
