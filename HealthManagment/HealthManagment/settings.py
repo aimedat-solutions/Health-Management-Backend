@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'allauth.account',
     'dj_rest_auth',
     'drf_spectacular',
+    'rest_framework',
     'rest_framework_simplejwt', 
     'rest_framework_simplejwt.token_blacklist',
     'users',
