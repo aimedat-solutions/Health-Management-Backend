@@ -25,7 +25,7 @@ class CustomUser(User):
     updated_at = models.DateTimeField(auto_now=True)
     
     def __str__(self):
-        return f"{self.role} . {self.username}"
+        return f"{self.role} . {self.phone_number}"
     
     def generate_security_code(self):
         """ Generate a random security code (OTP). """
@@ -99,7 +99,7 @@ class Patient(models.Model):
         return f'Patient {self.pk} : {self.first_name} {self.last_name}'
     
 class Doctor(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
     specialty = models.CharField(max_length=100)
 
     def __str__(self):
@@ -114,6 +114,30 @@ class DietPlan(models.Model):
     
     def __str__(self):
         return f"{self.diet_name} for {self.patient.first_name} on {self.date}"
+    
+class Exercise(models.Model):
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='exercises')
+    exercise_name = models.CharField(max_length=255)
+    exercise_type = models.CharField(max_length=100, choices=[
+        ('strength', 'Strength Training'),
+        ('cardio', 'Cardio'),
+        ('flexibility', 'Flexibility'),
+        ('balance', 'Balance'),
+    ])
+    duration = models.DurationField()  # e.g., how long they did the exercise
+    intensity = models.CharField(max_length=50, choices=[
+        ('low', 'Low Intensity'),
+        ('medium', 'Medium Intensity'),
+        ('high', 'High Intensity'),
+    ])
+    calories_burned = models.PositiveIntegerField()
+    date = models.DateField()
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.exercise_name} by {self.user.username}"
 class SectionOneQuestions(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     work_involves_seasonal_activity = models.BooleanField(choices=[(True, 'Yes'), (False, 'No')])
@@ -139,7 +163,7 @@ class SectionOneQuestions(models.Model):
     strenuous_activities_part_time = models.DurationField(blank=True, null=True)
     
 class SectionTwoQuestions(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     duration_sleep_and_nap = models.DurationField(null=True)
     personal_care_duration = models.DurationField(null=True)
     cooking_duration = models.DurationField(null=True)
@@ -148,14 +172,14 @@ class SectionTwoQuestions(models.Model):
     climbing_steps_duration = models.DurationField(null=True)
 
 class SectionThreeQuestions(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     self_driving_duration = models.DurationField(null=True)
     commuting_duration = models.DurationField(null=True)
     cycling_duration = models.DurationField(null=True)
     walking_duration = models.DurationField(null=True)
 
 class SectionFourQuestions(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     watching_tv_duration = models.DurationField(null=True)
     chatting_reading_duration = models.DurationField(null=True)
     slow_walking_duration = models.DurationField(null=True)
@@ -166,7 +190,7 @@ class SectionFourQuestions(models.Model):
     others_duration = models.DurationField(null=True)
 
 class SectionFiveQuestions(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     weekend_includes = models.IntegerField(choices=[(1, 'Sunday'), (2, 'Saturday and Sunday')])
     weekend_extra_sleep_duration = models.DurationField(null=True)
     watching_tv_duration = models.DurationField(null=True)
@@ -257,14 +281,14 @@ class Question(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
 class PatientResponse(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='responses')
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='responses')
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='responses')
     response_text = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
 class HealthStatus(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='health_statuses')
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='health_statuses')
     status = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
