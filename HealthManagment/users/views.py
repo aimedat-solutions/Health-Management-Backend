@@ -1,6 +1,8 @@
 from rest_framework import generics, permissions
-from .models import Patient, Doctor, Question,DietPlan, CustomUser,SectionOneQuestions, SectionTwoQuestions, SectionThreeQuestions, SectionFourQuestions, SectionFiveQuestions
-from .serializers import PatientSerializer, DietPlanSerializer,DoctorSerializer, QuestionSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,CombinedSectionSerializer,PhoneNumberSerializer
+from .models import Patient, Doctor, Question,DietPlan,Exercise, CustomUser,SectionOneQuestions, SectionTwoQuestions, SectionThreeQuestions, SectionFourQuestions, SectionFiveQuestions
+from .serializers import PatientSerializer,ExerciseSerializer, DietPlanSerializer,DoctorSerializer, QuestionSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,CombinedSectionSerializer,PhoneNumberSerializer
+
+
 from rest_framework import views, status
 from rest_framework.response import Response
 from rest_framework.generics import GenericAPIView
@@ -19,14 +21,23 @@ from drf_spectacular.utils import extend_schema
 from users.permissions import PermissionsManager
 from rest_framework import viewsets
 from rest_framework import serializers
+from rest_framework import generics
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import NotAuthenticated
+from .utils import send_otp, verify_otp
 from .response_handler import success_response, error_response, SUCCESS_OTP_SENT, ERROR_USER_NOT_FOUND, ERROR_OTP_SEND_FAILED
 class UserRegistrationAPIView(APIView):
     serializer_class = UserRegistrationSerializer
     def post(self, request):
-        decrypted_data = {}
-        for field, value in request.data.items():
-            decrypted_data[field] = decrypt_password(value)
-        serializer = UserRegistrationSerializer(data=decrypted_data)
+        # The code snippet `decrypted_data = {}` initializes an empty dictionary to store decrypted
+        # data. The `for field, value in request.data.items():` loop iterates over each key-value pair
+        # in the `request.data` dictionary. For each pair, the value is decrypted using the
+        # `decrypt_password` function and then stored in the `decrypted_data` dictionary with the
+        # corresponding field as the key.
+        # decrypted_data = {}
+        # for field, value in request.data.items():
+        #     decrypted_data[field] = decrypt_password(value)
+        serializer = UserRegistrationSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
             refresh = RefreshToken.for_user(user)
@@ -44,10 +55,10 @@ class CustomLoginView(LoginView):
     serializer_class = UserLoginSerializer
     
     def post(self, request, *args, **kwargs):
-        decrypted_data = {}
-        for field, value in request.data.items():
-            decrypted_data[field] = decrypt_password(value)
-        serializer = self.get_serializer(data=decrypted_data)
+        # decrypted_data = {}
+        # for field, value in request.data.items():
+        #     decrypted_data[field] = decrypt_password(value)
+        serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
         refresh = RefreshToken.for_user(user)
@@ -134,35 +145,25 @@ class SendOrResendSMSAPIView(GenericAPIView):
     """
     API endpoint to send OTP to the user's phone number.
     """
-    def post(self, request, *args, **kwargs):
-        encrypted_phone_number = request.data.get('phone_number')
+    def post(self, request):
+        phone_number = request.data.get("phone_number", None)
 
-        decrypted_phone_number = decrypt_password(encrypted_phone_number)
+        if phone_number:
+            try:
+                # Check if the user already exists (for login flow)
+                user = CustomUser.objects.get(phone_number=phone_number)
+                send_otp(phone_number)  # Send OTP
+                user.save()
+                return Response({"message": "OTP sent for login.", "is_new_user": False}, status=status.HTTP_200_OK)
 
-        # Construct decrypted data dictionary
-        decrypted_data = {
-            'phone_number': decrypted_phone_number,
-        }
-        serializer = self.get_serializer(data=decrypted_data)
-
-        if serializer.is_valid():
-            phone_number = str(serializer.validated_data['phone_number'])
-            user = CustomUser.objects.filter(
-                phone_number=phone_number, is_verified=False).first()
-            if user:
-                try:
-                    # Send OTP
-                    if user.send_confirmation():
-                        return success_response(SUCCESS_OTP_SENT, {"phone_number": phone_number})
-                    else:
-                        return error_response(ERROR_OTP_SEND_FAILED, code=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-                except Exception as e:
-                    return error_response(str(e), code=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            else:
-                return error_response(ERROR_USER_NOT_FOUND, code=status.HTTP_404_NOT_FOUND)
-
-        return error_response(serializer.errors, code=status.HTTP_400_BAD_REQUEST)
+            except CustomUser.DoesNotExist:
+                # If the user does not exist (for registration flow)
+                user = CustomUser(phone_number=phone_number, role='patient', username=phone_number)
+                send_otp(phone_number)   # Send OTP
+                user.save()
+                return Response({"message": "OTP sent for registration.", "is_new_user": True}, status=status.HTTP_200_OK)
+        else:
+            return Response({"error": "Phone number is required"}, status=status.HTTP_400_BAD_REQUEST)
 class UserListView(generics.ListAPIView):
     queryset = CustomUser.objects.all()
     serializer_class = CustomUserDetailsSerializer
@@ -274,3 +275,29 @@ class SectionDataView(APIView):
         context = {'section_type': section_type}
         serializer = CombinedSectionSerializer(instance, context=context)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+class ExerciseListCreateView(generics.ListCreateAPIView):
+    serializer_class = ExerciseSerializer
+    # permission_classes = [IsAuthenticated]
+    permission_classes = [PermissionsManager]
+    codename = 'exercise'
+
+    def get_queryset(self):
+        # Return only exercises for the authenticated user
+        return Exercise.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        # Link the exercise to the authenticated user
+        serializer.save(user=self.request.user)
+        
+    def permission_denied(self, request, message=None, code=None):
+        if not request.user or not request.user.is_authenticated:
+            raise NotAuthenticated(detail="Custom message: You are not authenticated. Please log in.")
+
+class ExerciseDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = ExerciseSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        # Ensure users can only access their own exercises
+        return Exercise.objects.filter(user=self.request.user) 
