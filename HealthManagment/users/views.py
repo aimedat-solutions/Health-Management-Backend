@@ -24,6 +24,7 @@ from rest_framework import serializers
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import NotAuthenticated
+from .utils import send_otp, verify_otp
 from .response_handler import success_response, error_response, SUCCESS_OTP_SENT, ERROR_USER_NOT_FOUND, ERROR_OTP_SEND_FAILED
 class UserRegistrationAPIView(APIView):
     serializer_class = UserRegistrationSerializer
@@ -144,35 +145,25 @@ class SendOrResendSMSAPIView(GenericAPIView):
     """
     API endpoint to send OTP to the user's phone number.
     """
-    def post(self, request, *args, **kwargs):
-        encrypted_phone_number = request.data.get('phone_number')
+    def post(self, request):
+        phone_number = request.data.get("phone_number", None)
 
-        decrypted_phone_number = decrypt_password(encrypted_phone_number)
+        if phone_number:
+            try:
+                # Check if the user already exists (for login flow)
+                user = CustomUser.objects.get(phone_number=phone_number)
+                send_otp(phone_number)  # Send OTP
+                user.save()
+                return Response({"message": "OTP sent for login.", "is_new_user": False}, status=status.HTTP_200_OK)
 
-        # Construct decrypted data dictionary
-        decrypted_data = {
-            'phone_number': decrypted_phone_number,
-        }
-        serializer = self.get_serializer(data=decrypted_data)
-
-        if serializer.is_valid():
-            phone_number = str(serializer.validated_data['phone_number'])
-            user = CustomUser.objects.filter(
-                phone_number=phone_number, is_verified=False).first()
-            if user:
-                try:
-                    # Send OTP
-                    if user.send_confirmation():
-                        return success_response(SUCCESS_OTP_SENT, {"phone_number": phone_number})
-                    else:
-                        return error_response(ERROR_OTP_SEND_FAILED, code=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-                except Exception as e:
-                    return error_response(str(e), code=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            else:
-                return error_response(ERROR_USER_NOT_FOUND, code=status.HTTP_404_NOT_FOUND)
-
-        return error_response(serializer.errors, code=status.HTTP_400_BAD_REQUEST)
+            except CustomUser.DoesNotExist:
+                # If the user does not exist (for registration flow)
+                user = CustomUser(phone_number=phone_number, role='patient', username=phone_number)
+                send_otp(phone_number)   # Send OTP
+                user.save()
+                return Response({"message": "OTP sent for registration.", "is_new_user": True}, status=status.HTTP_200_OK)
+        else:
+            return Response({"error": "Phone number is required"}, status=status.HTTP_400_BAD_REQUEST)
 class UserListView(generics.ListAPIView):
     queryset = CustomUser.objects.all()
     serializer_class = CustomUserDetailsSerializer
