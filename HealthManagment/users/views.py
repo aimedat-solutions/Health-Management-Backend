@@ -1,6 +1,6 @@
 from rest_framework import generics, permissions
-from .models import Patient, Doctor, Question,DietPlan,Exercise, CustomUser,SectionOneQuestions, SectionTwoQuestions, SectionThreeQuestions, SectionFourQuestions, SectionFiveQuestions
-from .serializers import PatientSerializer,ExerciseSerializer, DietPlanSerializer,DoctorSerializer, QuestionSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,CombinedSectionSerializer,PhoneNumberSerializer
+from .models import Patient, Doctor, Question,DietPlan,Exercise, CustomUser,Option
+from .serializers import PatientSerializer,ExerciseSerializer, DietPlanSerializer,DoctorSerializer, QuestionSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,PhoneNumberSerializer
 
 
 from rest_framework import views, status
@@ -25,7 +25,7 @@ from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import NotAuthenticated
 from .utils import send_otp, verify_otp
-from .response_handler import success_response, error_response, SUCCESS_OTP_SENT, ERROR_USER_NOT_FOUND, ERROR_OTP_SEND_FAILED
+from .pagination import ProductPagination
 class UserRegistrationAPIView(APIView):
     serializer_class = UserRegistrationSerializer
     def post(self, request):
@@ -235,47 +235,47 @@ class DietPlanViewSet(viewsets.ModelViewSet):
 
 class QuestionListCreateView(generics.ListCreateAPIView):
     queryset = Question.objects.all()
-    serializer_class = QuestionSerializer
-    # permission_classes = [permissions.IsAdminUser]
+    pagination_class = ProductPagination
+
+    def get_serializer_class(self):
+        if self.request.method == 'POST':
+            return QuestionCreateSerializer
+        return QuestionSerializer
+
+    def perform_create(self, serializer):
+        question = serializer.save()
+
+        # Get the options data
+        options_data = self.request.data.get('options', [])
+
+        # Check if the question type is not 'description', because a description type shouldn't have options
+        if question.type != 'description':
+            for option_data in options_data:
+                Option.objects.create(question=question, value=option_data['value'])
 
 class QuestionDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Question.objects.all()
-    serializer_class = QuestionSerializer
-    permission_classes = [permissions.IsAdminUser]
+    lookup_field = 'id'
+
+    def get_serializer_class(self):
+        if self.request.method in ['PUT', 'PATCH']:
+            return QuestionCreateSerializer
+        return QuestionSerializer
+
+    def perform_update(self, serializer):
+        # Update the question
+        question = serializer.save()
+
+        # Update or replace the options if the question is not of type 'description'
+        options_data = self.request.data.get('options', [])
+        if question.type != 'description':
+            # First, delete all existing options
+            question.options.all().delete()
+
+            # Then, recreate options from the incoming data
+            for option_data in options_data:
+                Option.objects.create(question=question, value=option_data['value'])
     
-
-class CombinedSectionView(APIView):
-    serializer_class = CombinedSectionSerializer
-    def post(self, request, *args, **kwargs):
-        serializer = CombinedSectionSerializer(data=request.data)
-        if serializer.is_valid():
-            data = serializer.save()
-            return Response(data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-class SectionDataView(APIView):
-    serializer_class = CombinedSectionSerializer
-    def get(self, request, section_type, user_id, *args, **kwargs):
-        if section_type == 'I':
-            instance = SectionOneQuestions.objects.filter(user_id=user_id).first()
-        elif section_type == 'II':
-            instance = SectionTwoQuestions.objects.filter(user_id=user_id).first()
-        elif section_type == 'III':
-            instance = SectionThreeQuestions.objects.filter(user_id=user_id).first()
-        elif section_type == 'IV':
-            instance = SectionFourQuestions.objects.filter(user_id=user_id).first()
-        elif section_type == 'V':
-            instance = SectionFiveQuestions.objects.filter(user_id=user_id).first()
-        else:
-            return Response({"detail": "Invalid section type"}, status=status.HTTP_400_BAD_REQUEST)
-
-        if not instance:
-            return Response({"detail": "Data not found"}, status=status.HTTP_404_NOT_FOUND)
-
-        context = {'section_type': section_type}
-        serializer = CombinedSectionSerializer(instance, context=context)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
 class ExerciseListCreateView(generics.ListCreateAPIView):
     serializer_class = ExerciseSerializer
     # permission_classes = [IsAuthenticated]
