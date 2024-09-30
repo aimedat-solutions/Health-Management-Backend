@@ -1,6 +1,6 @@
 from django.urls import path,include
 from rest_framework.routers import DefaultRouter
-from .views import PatientListCreateView,ExerciseListCreateView,ExerciseDetailView, SendOrResendSMSAPIView,DietPlanViewSet,SectionDataView,CombinedSectionView,PatientDetailView,DoctorListCreateView,DoctorDetailView,UserEditView, UserListView, QuestionListCreateView, QuestionDetailView, CustomLoginView,UserRegistrationAPIView,LogoutAPIView
+from .views import PatientListCreateView,ExerciseListCreateView,ExerciseDetailView, SendOrResendSMSAPIView,DietPlanViewSet,PatientDetailView,DoctorListCreateView,DoctorDetailView,UserEditView, UserListView, QuestionListCreateView, QuestionDetailView, CustomLoginView,UserRegistrationAPIView,LogoutAPIView
 
 app_name = 'users'
 
@@ -24,8 +24,5 @@ urlpatterns = [
     path('doctors/', DoctorListCreateView.as_view(), name='doctor-list-create'),
     path('doctors/<int:pk>/', DoctorDetailView.as_view(), name='doctor-detail'),
     path('questions/', QuestionListCreateView.as_view(), name='question-list-create'),
-    path('questions/<int:pk>/', QuestionDetailView.as_view(), name='question-detail'),
-    
-    path('questions-add/', CombinedSectionView.as_view(), name='submit-section'),
-    path('get-section/<str:section_type>/<int:user_id>/', SectionDataView.as_view(), name='get-section'),
+    path('questions/<int:id>/', QuestionDetailView.as_view(), name='question-detail'),
 ]
