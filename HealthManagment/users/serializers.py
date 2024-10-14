@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from phonenumber_field.serializerfields import PhoneNumberField
 from django.contrib.auth.models import Group, Permission
 from .utils import send_otp, verify_otp
-from .models import Doctor, Question, Patient,DietPlan,Exercise, CustomUser, SectionOneQuestions, SectionTwoQuestions, SectionThreeQuestions, SectionFourQuestions, SectionFiveQuestions
+from .models import Doctor, Question, Patient,DietPlan,Exercise, CustomUser, Option
 User = get_user_model()
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -180,100 +180,57 @@ class ExerciseSerializer(serializers.ModelSerializer):
 
 
 
+class OptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Option
+        fields = ['id', 'value']
+
 class QuestionSerializer(serializers.ModelSerializer):
-    section_display = serializers.SerializerMethodField()
-    question_code_display = serializers.SerializerMethodField()
+    options = OptionSerializer(many=True, read_only=True)
 
     class Meta:
         model = Question
-        fields = [
-            'id', 'section', 'section_display', 'question_code', 'question_code_display', 
-            'question_text', 'is_seasonal', 'is_full_time', 'duration_years',
-            'duration_months', 'duration_weeks', 'hours_per_day', 'activity_type',
-            'activity_duration', 'created_at', 'updated_at'
-        ]
+        fields = ['id', 'type', 'question_text', 'options', 'placeholder', 'max_length']
     
-    def get_section_display(self, obj):
-        return dict(Question.SECTION_CHOICES).get(obj.section)
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
 
-    def get_question_code_display(self, obj):
-        return dict(Question.QUESTION_CHOICES).get(obj.question_code)
+        # Only include 'placeholder' and 'max_length' for 'description' type
+        if instance.type != 'description':
+            representation.pop('placeholder', None)
+            representation.pop('max_length', None)
+
+        return representation  
+class OptionCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Option
+        fields = ['value']
+
+# Serializer for creating questions with options
+class QuestionCreateSerializer(serializers.ModelSerializer):
+    options = OptionCreateSerializer(many=True, required=False)
+
+    class Meta:
+        model = Question
+        fields = ['type', 'question_text', 'placeholder', 'max_length', 'options']
+        extra_kwargs = {
+            'placeholder': {'required': False},  # Make placeholder optional
+            'max_length': {'required': False},   # Make max_length optional
+        }
+    
+    def validate(self, data):
+        # Ensure 'placeholder' and 'max_length' are optional but allowed for 'description' type
+        if data['type'] != 'description' and ('placeholder' in data or 'max_length' in data):
+            raise serializers.ValidationError("Only description type questions can have a placeholder or max_length.")
         
-        
-        
-class SectionOneQuestionsSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = SectionOneQuestions
-        fields = '__all__'
-
-class SectionTwoQuestionsSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = SectionTwoQuestions
-        fields = '__all__'
-
-class SectionThreeQuestionsSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = SectionThreeQuestions
-        fields = '__all__'
-
-class SectionFourQuestionsSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = SectionFourQuestions
-        fields = '__all__'
-
-class SectionFiveQuestionsSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = SectionFiveQuestions
-        fields = '__all__'
-
-class CombinedSectionSerializer(serializers.Serializer):
-    section_type = serializers.ChoiceField(choices=[
-        ('I', 'Physical Activity at Work'),
-        ('II', 'Physical Activity – General'),
-        ('III', 'Physical Activity - Commutation (Transport)'),
-        ('IV', 'Physical Activity - Recreation'),
-        ('V', 'Physical Activity - Weekend Recreation'),
-    ])
-    section_data = serializers.JSONField()
+        return data
 
     def create(self, validated_data):
-        section_type = validated_data.get('section_type')
-        section_data = validated_data.get('section_data')
-
-        if section_type == 'I':
-            serializer = SectionOneQuestionsSerializer(data=section_data)
-        elif section_type == 'II':
-            serializer = SectionTwoQuestionsSerializer(data=section_data)
-        elif section_type == 'III':
-            serializer = SectionThreeQuestionsSerializer(data=section_data)
-        elif section_type == 'IV':
-            serializer = SectionFourQuestionsSerializer(data=section_data)
-        elif section_type == 'V':
-            serializer = SectionFiveQuestionsSerializer(data=section_data)
-        else:
-            raise serializers.ValidationError("Invalid section type")
-
-        if serializer.is_valid():
-            serializer.save()
-            return serializer.data
-        else:
-            raise serializers.ValidationError(serializer.errors)
+        options_data = validated_data.pop('options', [])
+        question = Question.objects.create(**validated_data)
+        if question.type != 'description':
+            for option_data in options_data:
+                Option.objects.create(question=question, **option_data)
         
+        return question
         
-    def to_representation(self, instance):
-        section_type = self.context.get('section_type')
-        
-        if section_type == 'I':
-            serializer = SectionOneQuestionsSerializer(instance)
-        elif section_type == 'II':
-            serializer = SectionTwoQuestionsSerializer(instance)
-        elif section_type == 'III':
-            serializer = SectionThreeQuestionsSerializer(instance)
-        elif section_type == 'IV':
-            serializer = SectionFourQuestionsSerializer(instance)
-        elif section_type == 'V':
-            serializer = SectionFiveQuestionsSerializer(instance)
-        else:
-            raise serializers.ValidationError("Invalid section type")
-
-        return serializer.data
