@@ -5,6 +5,7 @@ from phonenumber_field.serializerfields import PhoneNumberField
 from django.contrib.auth.models import Group, Permission
 from .utils import send_otp, verify_otp
 from .models import Doctor, Question, Patient,DietPlan,Exercise, CustomUser, Option
+import re
 User = get_user_model()
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -16,24 +17,57 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = ('username', 'password', 'email', 'role', 'phone_number')
 
+    def validate_username(self, value):
+        # Ensure the username does not contain numbers
+        if re.search(r'\d', value):
+            raise serializers.ValidationError("Username should not contain numbers.")
+        # Check if the username already exists
+        if CustomUser.objects.filter(username=value).exists():
+            raise serializers.ValidationError("A user with this username already exists.")
+        return value
+
+    def validate_email(self, value):
+        # Check if the email already exists
+        if CustomUser.objects.filter(email=value).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return value
+
+    def validate_phone_number(self, value):
+        # Ensure the phone number is valid (e.g., contains only digits and has a valid length)
+        if not re.match(r'^\+?1?\d{9,15}$', value):
+            raise serializers.ValidationError("Enter a valid phone number. It should be between 9 and 15 digits.")
+        # Check if the phone number already exists
+        if CustomUser.objects.filter(phone_number=value).exists():
+            raise serializers.ValidationError("A user with this phone number already exists.")
+        return value
+
+    def validate_role(self, value):
+        # Disallow creating users with the admin role directly
+        if value == 'admin':
+            raise serializers.ValidationError("Admin role cannot be created directly.")
+        return value
+
     def create(self, validated_data):
         phone_number = validated_data.pop('phone_number', None)
+        
         user = CustomUser.objects.create_user(
             username=validated_data['username'],
             email=validated_data['email'],
             password=validated_data['password'],
             role=validated_data['role']
         )
+        # Add the user to the appropriate group based on their role
         group = Group.objects.get(name=validated_data['role'])
         user.groups.add(group)
         
+        # If a phone number is provided, add it to the user and send an OTP
         if phone_number:
             user.phone_number = phone_number
             user.save()
             send_otp(phone_number)
             print(send_otp)
+        
         return user
-
 
 class UserLoginSerializer(serializers.Serializer):
     email = serializers.EmailField(required=False)
