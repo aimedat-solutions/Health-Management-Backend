@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from phonenumber_field.serializerfields import PhoneNumberField
 from django.contrib.auth.models import Group, Permission
 from .utils import send_otp, verify_otp
-from .models import Doctor, Question, Patient,DietPlan,Exercise, CustomUser, Option
+from .models import Doctor, Question, Patient,DietPlan,Exercise, CustomUser, Option, PatientResponse
 import re
 User = get_user_model()
 
@@ -107,7 +107,7 @@ class PhoneNumberSerializer(serializers.ModelSerializer):
 class CustomUserDetailsSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ('pk', 'username', 'email', 'role', 'phone_number')
+        fields = ('pk', 'username', 'email', 'role', 'phone_number', "created_at", "created_by", "updated_at", "updated_by")
         read_only_fields = ('email',)
 
 class CustomUserSerializer(serializers.ModelSerializer):
@@ -128,7 +128,7 @@ class PatientSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Patient
-        fields = ['id', 'user', 'first_name', 'last_name', 'date_of_birth', 'gender', 'address', 'health_status']
+        fields = ['id', 'user', 'first_name', 'last_name', 'date_of_birth', 'gender', 'address', "created_at", "created_by", "updated_at", "updated_by"]
         
     def create(self, validated_data):
         user_data = validated_data.pop('user')
@@ -187,7 +187,7 @@ class DietPlanSerializer(serializers.ModelSerializer):
     meal_plan = serializers.ListField(child=serializers.CharField())
     class Meta:
         model = DietPlan
-        fields = ['id', 'patient', 'date', 'diet_name', 'time_of_day', 'meal_plan']
+        fields = ['id', 'patient', 'date', 'diet_name', 'time_of_day', 'meal_plan',"created_at", "created_by", "updated_at", "updated_by"]
 
     def create(self, validated_data):
         request = self.context.get('request')
@@ -208,7 +208,7 @@ class ExerciseSerializer(serializers.ModelSerializer):
         model = Exercise
         fields = [
             'id', 'user', 'exercise_name', 'exercise_type', 'duration', 
-            'intensity', 'calories_burned', 'date', 'created_at', 'updated_at'
+            'intensity', 'calories_burned', 'date', "created_at", "created_by", "updated_at", "updated_by"
         ]
         read_only_fields = ['user', 'created_at', 'updated_at']
 
@@ -217,14 +217,14 @@ class ExerciseSerializer(serializers.ModelSerializer):
 class OptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Option
-        fields = ['id', 'value']
+        fields = ['id', 'value',"created_at", "created_by", "updated_at", "updated_by"]
 
 class QuestionSerializer(serializers.ModelSerializer):
     options = OptionSerializer(many=True, read_only=True)
 
     class Meta:
         model = Question
-        fields = ['id', 'type', 'question_text', 'options', 'placeholder', 'max_length']
+        fields = ['id', 'type', 'question_text', 'options', 'placeholder', 'max_length',"created_at", "created_by", "updated_at", "updated_by"]
     
     def to_representation(self, instance):
         representation = super().to_representation(instance)
@@ -238,7 +238,7 @@ class QuestionSerializer(serializers.ModelSerializer):
 class OptionCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Option
-        fields = ['value']
+        fields = ['id', 'value']
 
 # Serializer for creating questions with options
 class QuestionCreateSerializer(serializers.ModelSerializer):
@@ -262,9 +262,43 @@ class QuestionCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         options_data = validated_data.pop('options', [])
         question = Question.objects.create(**validated_data)
-        if question.type != 'description':
-            for option_data in options_data:
-                Option.objects.create(question=question, **option_data)
+        for option_data in options_data:
+            Option.objects.create(question=question, **option_data)
         
         return question
-        
+    
+    def update(self, instance, validated_data):
+        # Update the question fields
+        options_data = validated_data.pop('options', [])
+        instance.type = validated_data.get('type', instance.type)
+        instance.question_text = validated_data.get('question_text', instance.question_text)
+        instance.placeholder = validated_data.get('placeholder', instance.placeholder)
+        instance.max_length = validated_data.get('max_length', instance.max_length)
+        instance.save()
+
+        # If the question type is not 'description', update options
+        for option_data in options_data:
+            option_id = option_data.get('id')
+
+            # If 'id' is provided, try to update the existing option
+            if option_id:
+                try:
+                    option = Option.objects.get(id=option_id, question=instance)
+                    option.value = option_data.get('value', option.value)
+                    option.save()
+                except Option.DoesNotExist:
+                    # If the option does not exist, create a new one
+                    Option.objects.create(question=instance, **option_data)
+            else:
+                # If no 'id' is provided, create a new option
+                Option.objects.create(question=instance, **option_data)
+
+        return instance
+    
+    
+class QuestionAnswerSerializer(serializers.ModelSerializer):
+    question_text = serializers.CharField(source="question.question_text", read_only=True)
+    user_info = serializers.CharField(source="user.username", read_only=True)
+    class Meta:
+        model = PatientResponse
+        fields = ["id", "user", "question", "question_text", "response_text", "user_info", "created_at", "created_by", "updated_at", "updated_by"]

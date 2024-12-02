@@ -14,6 +14,7 @@ from pathlib import Path
 from decouple import config, Csv
 import os
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
+from datetime import timedelta
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -58,6 +59,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'users.middleware.AuditMiddleware',
+
 ]
 
 ROOT_URLCONF = 'HealthManagment.urls'
@@ -126,6 +129,8 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
     'BLACKLIST_AFTER_ROTATION': True,
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 }
 # Internationalization
 # https://docs.djangoproject.com/en/4.0/topics/i18n/
