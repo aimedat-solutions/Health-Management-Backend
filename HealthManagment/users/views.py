@@ -1,6 +1,6 @@
 from rest_framework import generics, permissions
-from .models import Patient, Doctor, Question,DietPlan,Exercise, CustomUser,Option
-from .serializers import PatientSerializer,ExerciseSerializer, DietPlanSerializer,DoctorSerializer, QuestionSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,PhoneNumberSerializer
+from .models import Patient, Doctor, Question,DietPlan,Exercise, CustomUser,Option,PatientResponse
+from .serializers import PatientSerializer,ExerciseSerializer, DietPlanSerializer,DoctorSerializer, QuestionSerializer,QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,PhoneNumberSerializer
 
 
 from rest_framework import views, status
@@ -61,12 +61,18 @@ class CustomLoginView(LoginView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
+        is_new_user = user.is_first_login
+        if is_new_user:
+            # Mark the user's first login as completed
+            user.is_first_login = False
+            user.save()
         refresh = RefreshToken.for_user(user)
         access_token = str(refresh.access_token)
         refresh_token = str(refresh)
         response_data = {
             'access_token': access_token,
             'refresh_token': refresh_token,
+            'is_new_user': is_new_user,
         }
         response_data.update(CustomUserDetailsSerializer(user).data)
         return Response(response_data, status=status.HTTP_200_OK)
@@ -158,7 +164,7 @@ class SendOrResendSMSAPIView(GenericAPIView):
 
             except CustomUser.DoesNotExist:
                 # If the user does not exist (for registration flow)
-                user = CustomUser(phone_number=phone_number, role='patient', username=phone_number)
+                user = CustomUser(phone_number=phone_number, role='patient', username=phone_number, is_first_login=True,)
                 send_otp(phone_number)   # Send OTP
                 user.save()
                 return Response({"message": "OTP sent for registration.", "is_new_user": True}, status=status.HTTP_200_OK)
@@ -243,16 +249,7 @@ class QuestionListCreateView(generics.ListCreateAPIView):
         return QuestionSerializer
 
     def perform_create(self, serializer):
-        question = serializer.save()
-
-        # Get the options data
-        options_data = self.request.data.get('options', [])
-
-        # Check if the question type is not 'description', because a description type shouldn't have options
-        if question.type != 'description':
-            for option_data in options_data:
-                Option.objects.create(question=question, value=option_data['value'])
-
+        serializer.save()
 class QuestionDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Question.objects.all()
     lookup_field = 'id'
@@ -301,3 +298,29 @@ class ExerciseDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         # Ensure users can only access their own exercises
         return Exercise.objects.filter(user=self.request.user) 
+    
+
+class QuestionAnswerListCreateView(APIView):
+    serializer_class = QuestionAnswerSerializer
+    permission_classes = [IsAuthenticated]
+   
+    def get(self, request):
+        """
+        Get all answers by the logged-in user.
+        """
+        answers = PatientResponse.objects.filter(user=request.user)
+        serializer = QuestionAnswerSerializer(answers, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        """
+        Submit answers for specific questions.
+        """
+        data = request.data
+        data["user"] = request.user.id  # Attach the logged-in user
+
+        serializer = QuestionAnswerSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
