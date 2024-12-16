@@ -252,6 +252,7 @@ class QuestionListCreateView(generics.ListCreateAPIView):
         serializer.save()
 class QuestionDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Question.objects.all()
+    serializer_class = QuestionCreateSerializer
     lookup_field = 'id'
 
     def get_serializer_class(self):
@@ -260,18 +261,7 @@ class QuestionDetailView(generics.RetrieveUpdateDestroyAPIView):
         return QuestionSerializer
 
     def perform_update(self, serializer):
-        # Update the question
-        question = serializer.save()
-
-        # Update or replace the options if the question is not of type 'description'
-        options_data = self.request.data.get('options', [])
-        if question.type != 'description':
-            # First, delete all existing options
-            question.options.all().delete()
-
-            # Then, recreate options from the incoming data
-            for option_data in options_data:
-                Option.objects.create(question=question, value=option_data['value'])
+        serializer.save()
     
 class ExerciseListCreateView(generics.ListCreateAPIView):
     serializer_class = ExerciseSerializer
