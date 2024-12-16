@@ -236,6 +236,7 @@ class QuestionSerializer(serializers.ModelSerializer):
 
         return representation  
 class OptionCreateSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False) 
     class Meta:
         model = Option
         fields = ['id', 'value']
@@ -268,34 +269,46 @@ class QuestionCreateSerializer(serializers.ModelSerializer):
         return question
     
     def update(self, instance, validated_data):
-        # Update the question fields
-        options_data = validated_data.pop('options', [])
+        # Update question fields
         instance.type = validated_data.get('type', instance.type)
         instance.question_text = validated_data.get('question_text', instance.question_text)
         instance.placeholder = validated_data.get('placeholder', instance.placeholder)
         instance.max_length = validated_data.get('max_length', instance.max_length)
         instance.save()
 
-        # If the question type is not 'description', update options
+        # Update or create options
+        options_data = validated_data.get('options', [])
+        current_options = {opt.id: opt for opt in instance.options.all()}
+        processed_option_ids = set()
+
         for option_data in options_data:
             option_id = option_data.get('id')
+            option_value = option_data['value']
 
-            # If 'id' is provided, try to update the existing option
             if option_id:
-                try:
-                    option = Option.objects.get(id=option_id, question=instance)
-                    option.value = option_data.get('value', option.value)
+                # Update existing option
+                option = current_options.get(option_id)
+                if option:
+                    option.value = option_value
                     option.save()
-                except Option.DoesNotExist:
-                    # If the option does not exist, create a new one
-                    Option.objects.create(question=instance, **option_data)
+                    processed_option_ids.add(option.id)
             else:
-                # If no 'id' is provided, create a new option
-                Option.objects.create(question=instance, **option_data)
+                # Create new option
+                new_option = Option.objects.create(question=instance, value=option_value)
+                processed_option_ids.add(new_option.id)
 
-        return instance
-    
-    
+        # Response structure
+        updated_options = [
+            {"id": opt.id, "value": opt.value} for opt in instance.options.all()
+        ]
+        return {
+            "type": instance.type,
+            "question_text": instance.question_text,
+            "placeholder": instance.placeholder,
+            "max_length": instance.max_length,
+            "options": updated_options,
+        }
+        
 class QuestionAnswerSerializer(serializers.ModelSerializer):
     question_text = serializers.CharField(source="question.question_text", read_only=True)
     user_info = serializers.CharField(source="user.username", read_only=True)

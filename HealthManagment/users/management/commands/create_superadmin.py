@@ -24,7 +24,7 @@ superadmin_group.permissions.set(superadmin_permissions)
 
 admin_group = Group.objects.get(name='doctor')
 admin_permissions_codenames = [
-    'add_doctor', 'view_doctor',
+    'add_doctor', 'view_doctor', 'add_question', 'view_question', 'add_exercise', 'add_deitpaln', 'view_patient' 
 ]
 admin_permissions = Permission.objects.filter(
     codename__in=admin_permissions_codenames)
