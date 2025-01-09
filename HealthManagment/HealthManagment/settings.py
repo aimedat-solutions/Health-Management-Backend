@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'allauth.account',
     'dj_rest_auth',
     'drf_spectacular',
+    'corsheaders',
     'rest_framework',
     'rest_framework_simplejwt', 
     'rest_framework_simplejwt.token_blacklist',
@@ -60,8 +61,11 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'users.middleware.AuditMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
 
 ]
+
+CORS_ALLOW_ALL_ORIGINS = True 
 
 ROOT_URLCONF = 'HealthManagment.urls'
 
@@ -160,7 +164,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'MHealth App API',
-    'DESCRIPTION': 'mHealth Management API',
+    'DESCRIPTION': 'MHealth Management API',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
 }

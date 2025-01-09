@@ -32,7 +32,7 @@ admin_group.permissions.set(admin_permissions)
 
 users_group = Group.objects.get(name='patient')
 user_permissions_codenames = [
-    'add_patient', 'view_patient',
+    'add_patient', 'view_patient','add_deitpaln',
 ]
 users_permissions = Permission.objects.filter(
     codename__in=user_permissions_codenames)

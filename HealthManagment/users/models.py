@@ -105,24 +105,10 @@ class CustomUser(User, AuditModel):
                 raise ValidationError({"verification_error": _("OTP has expired. Please request a new OTP.")})
         else:
             raise ValidationError({"verification_error": _("Invalid OTP. Try again.")})
-    
+        
+        
 
-class Patient(AuditModel):
-    GENDER_CHOICES = [
-        ('male', 'Male'),
-        ('female', 'Female'),
-    ]
-    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='patient_profile')
-    first_name = models.CharField(max_length=100)
-    last_name = models.CharField(max_length=100)
-    date_of_birth = models.DateField(null=True, blank=True)
-    gender = models.CharField(max_length=10,choices=GENDER_CHOICES,default="female")
-    address = models.TextField()
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"{self.first_name} {self.last_name} - {self.user.role}"
+######################################################################## Doctor Model ################################################################################################
 
 
 class Doctor(AuditModel):
@@ -131,19 +117,6 @@ class Doctor(AuditModel):
 
     def __str__(self):
         return f'Doctor {self.user} - Specialty: {self.specialty}'
-
-
-class DietPlan(AuditModel):
-    patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="assigned_diets")
-    doctor = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="created_diets")
-    date = models.DateField()
-    diet_name = models.CharField(max_length=100)
-    time_of_day = models.CharField(max_length=50)  
-    meal_plan = models.JSONField()
-
-    def __str__(self):
-        return f"{self.diet_name} for {self.patient.first_name} on {self.date}"
-
 
 class Exercise(AuditModel):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='exercises')
@@ -203,6 +176,40 @@ class Option(AuditModel):
         return self.value
 
 
+
+######################################################################### PATIENT Model #########################################################################################################
+
+class Profile(AuditModel):
+    GENDER_CHOICES = [
+        ('male', 'Male'),
+        ('female', 'Female'),
+    ]
+    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='user_profile')
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    date_of_birth = models.DateField(null=True, blank=True)
+    gender = models.CharField(max_length=10,choices=GENDER_CHOICES,default="female")
+    address = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.first_name} {self.last_name} - {self.user.role}"
+
+
+class DietPlan(AuditModel):
+    patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="assigned_diets")
+    doctor = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="created_diets")
+    date = models.DateField()
+    diet_name = models.CharField(max_length=100)
+    time_of_day = models.CharField(max_length=50)  
+    meal_plan = models.JSONField()
+
+    def __str__(self):
+        return f"{self.diet_name} for {self.patient.first_name} on {self.date}"
+    
+    
+
 class PatientResponse(AuditModel):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='responses')
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='responses')
@@ -211,6 +218,15 @@ class PatientResponse(AuditModel):
     def __str__(self):
         return f"Answers by {self.user.username}"
 
+
+class LabReport(AuditModel):
+    patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="lab_reports")
+    report_name = models.CharField(max_length=200)
+    report_file = models.FileField(upload_to='lab_reports/')
+    date_of_report = models.DateField()
+
+    def __str__(self):
+        return f"{self.report_name} for {self.patient.first_name} on {self.date_of_report}"
 
 class HealthStatus(AuditModel):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='health_statuses')
