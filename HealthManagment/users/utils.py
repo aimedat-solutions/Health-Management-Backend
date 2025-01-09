@@ -49,3 +49,24 @@ def verify_otp(to, otp_entered_by_user):
     response = requests.post(url, params=params, headers=headers)
     data = response.json()
     return data
+
+
+def send_custom_sms(to, student_name, adm_no, exam_name, date, marks):
+    url = "https://control.msg91.com/api/v5/flow"  
+    headers = {
+        "authkey": settings.MSG91_API_KEY,
+        "content-type": "application/json"
+    }
+    payload = {
+        "template_id": "67591057d6fc054ffb759f72", 
+        "recipients": [
+            {
+            "mobiles": to,  
+            "var1": student_name,
+            "var2": date
+            }
+        ]
+    }
+    response = requests.post(url, json=payload, headers=headers)
+    data = response.json()
+    return data

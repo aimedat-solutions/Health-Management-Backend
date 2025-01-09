@@ -4,33 +4,32 @@ from django.contrib.auth import get_user_model
 from phonenumber_field.serializerfields import PhoneNumberField
 from django.contrib.auth.models import Group, Permission
 from .utils import send_otp, verify_otp
-from .models import Doctor, Question, Patient,DietPlan,Exercise, CustomUser, Option
+from .models import Doctor, Question, Profile,DietPlan,Exercise, CustomUser, Option, PatientResponse,LabReport
 import re
 User = get_user_model()
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
-    role = serializers.ChoiceField(choices=CustomUser.ROLE_CHOICES)
+    
     phone_number = serializers.CharField(required=False)
 
     class Meta:
         model = CustomUser
-        fields = ('username', 'password', 'email', 'role', 'phone_number')
+        fields = ('role', 'phone_number')
 
-    def validate_username(self, value):
-        # Ensure the username does not contain numbers
-        if re.search(r'\d', value):
-            raise serializers.ValidationError("Username should not contain numbers.")
-        # Check if the username already exists
-        if CustomUser.objects.filter(username=value).exists():
-            raise serializers.ValidationError("A user with this username already exists.")
-        return value
+    # def validate_username(self, value):
+    #     # Ensure the username does not contain numbers
+    #     if re.search(r'\d', value):
+    #         raise serializers.ValidationError("Username should not contain numbers.")
+    #     # Check if the username already exists
+    #     if CustomUser.objects.filter(username=value).exists():
+    #         raise serializers.ValidationError("A user with this username already exists.")
+    #     return value
 
-    def validate_email(self, value):
-        # Check if the email already exists
-        if CustomUser.objects.filter(email=value).exists():
-            raise serializers.ValidationError("A user with this email already exists.")
-        return value
+    # def validate_email(self, value):
+    #     # Check if the email already exists
+    #     if CustomUser.objects.filter(email=value).exists():
+    #         raise serializers.ValidationError("A user with this email already exists.")
+    #     return value
 
     def validate_phone_number(self, value):
         # Ensure the phone number is valid (e.g., contains only digits and has a valid length)
@@ -49,15 +48,14 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         phone_number = validated_data.pop('phone_number', None)
-        
+        role = validated_data.pop('role', None)
         user = CustomUser.objects.create_user(
-            username=validated_data['username'],
-            email=validated_data['email'],
-            password=validated_data['password'],
-            role=validated_data['role']
+            username=phone_number,  
+            role=role,
+            password=CustomUser.objects.make_random_password(),  # Auto-generate password if not given
         )
         # Add the user to the appropriate group based on their role
-        group = Group.objects.get(name=validated_data['role'])
+        group = Group.objects.get(name=role)
         user.groups.add(group)
         
         # If a phone number is provided, add it to the user and send an OTP
@@ -107,7 +105,7 @@ class PhoneNumberSerializer(serializers.ModelSerializer):
 class CustomUserDetailsSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ('pk', 'username', 'email', 'role', 'phone_number')
+        fields = ('pk', 'username', 'email', 'role', 'phone_number', "created_at", "created_by", "updated_at", "updated_by")
         read_only_fields = ('email',)
 
 class CustomUserSerializer(serializers.ModelSerializer):
@@ -115,6 +113,7 @@ class CustomUserSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = ['id', 'username', 'email', 'role', 'phone_number','password']
         extra_kwargs = {'password': {'write_only': True}}
+
 
 class DoctorSerializer(serializers.ModelSerializer):
     user = CustomUserSerializer()
@@ -127,13 +126,13 @@ class PatientSerializer(serializers.ModelSerializer):
     user = CustomUserSerializer()
 
     class Meta:
-        model = Patient
-        fields = ['id', 'user', 'first_name', 'last_name', 'date_of_birth', 'gender', 'address', 'health_status']
+        model = Profile
+        fields = ['id', 'user', 'first_name', 'last_name', 'date_of_birth', 'gender', 'address', "created_at", "created_by", "updated_at", "updated_by"]
         
     def create(self, validated_data):
         user_data = validated_data.pop('user')
         user = User.objects.create(**user_data)
-        patient = Patient.objects.create(user=user, **validated_data)
+        patient = Profile.objects.create(user=user, **validated_data)
         return patient
 
     def update(self, instance, validated_data):
@@ -155,6 +154,25 @@ class PatientSerializer(serializers.ModelSerializer):
         user.save()
 
         return instance
+    
+class DoctorRegistrationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomUser
+        fields = ['id', 'phone_number', 'role']  # Add other fields if required
+        read_only_fields = ['id', 'role'] 
+
+    def create(self, validated_data):
+        # Set default role as 'doctor'
+        validated_data['role'] = 'doctor'
+        validated_data['username'] = validated_data['phone_number']
+        validated_data['password']=CustomUser.objects.make_random_password()
+        group = Group.objects.get(name=validated_data['role'])
+        user = CustomUser.objects.create(**validated_data)
+        user.groups.add(group)
+        user.save()
+        send_otp(validated_data['phone_number'])
+        return user
+
 
 class DoctorSerializer(serializers.ModelSerializer):
     user = CustomUserSerializer()
@@ -187,7 +205,7 @@ class DietPlanSerializer(serializers.ModelSerializer):
     meal_plan = serializers.ListField(child=serializers.CharField())
     class Meta:
         model = DietPlan
-        fields = ['id', 'patient', 'date', 'diet_name', 'time_of_day', 'meal_plan']
+        fields = ['id', 'patient', 'date', 'diet_name', 'time_of_day', 'meal_plan',"created_at", "created_by", "updated_at", "updated_by"]
 
     def create(self, validated_data):
         request = self.context.get('request')
@@ -208,7 +226,7 @@ class ExerciseSerializer(serializers.ModelSerializer):
         model = Exercise
         fields = [
             'id', 'user', 'exercise_name', 'exercise_type', 'duration', 
-            'intensity', 'calories_burned', 'date', 'created_at', 'updated_at'
+            'intensity', 'calories_burned', 'date', "created_at", "created_by", "updated_at", "updated_by"
         ]
         read_only_fields = ['user', 'created_at', 'updated_at']
 
@@ -217,14 +235,14 @@ class ExerciseSerializer(serializers.ModelSerializer):
 class OptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Option
-        fields = ['id', 'value']
+        fields = ['id', 'value',"created_at", "created_by", "updated_at", "updated_by"]
 
 class QuestionSerializer(serializers.ModelSerializer):
     options = OptionSerializer(many=True, read_only=True)
 
     class Meta:
         model = Question
-        fields = ['id', 'type', 'question_text', 'options', 'placeholder', 'max_length']
+        fields = ['id', 'type', 'question_text', 'options', 'placeholder', 'max_length',"created_at", "created_by", "updated_at", "updated_by"]
     
     def to_representation(self, instance):
         representation = super().to_representation(instance)
@@ -236,9 +254,10 @@ class QuestionSerializer(serializers.ModelSerializer):
 
         return representation  
 class OptionCreateSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False) 
     class Meta:
         model = Option
-        fields = ['value']
+        fields = ['id', 'value']
 
 # Serializer for creating questions with options
 class QuestionCreateSerializer(serializers.ModelSerializer):
@@ -262,9 +281,73 @@ class QuestionCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         options_data = validated_data.pop('options', [])
         question = Question.objects.create(**validated_data)
-        if question.type != 'description':
-            for option_data in options_data:
-                Option.objects.create(question=question, **option_data)
+        for option_data in options_data:
+            Option.objects.create(question=question, **option_data)
         
         return question
+    
+    def update(self, instance, validated_data):
+        # Update question fields
+        instance.type = validated_data.get('type', instance.type)
+        instance.question_text = validated_data.get('question_text', instance.question_text)
+        instance.placeholder = validated_data.get('placeholder', instance.placeholder)
+        instance.max_length = validated_data.get('max_length', instance.max_length)
+        instance.save()
+
+        # Update or create options
+        options_data = validated_data.get('options', [])
+        current_options = {opt.id: opt for opt in instance.options.all()}
+        processed_option_ids = set()
+
+        for option_data in options_data:
+            option_id = option_data.get('id')
+            option_value = option_data['value']
+
+            if option_id:
+                # Update existing option
+                option = current_options.get(option_id)
+                if option:
+                    option.value = option_value
+                    option.save()
+                    processed_option_ids.add(option.id)
+            else:
+                # Create new option
+                new_option = Option.objects.create(question=instance, value=option_value)
+                processed_option_ids.add(new_option.id)
+
+        # Response structure
+        updated_options = [
+            {"id": opt.id, "value": opt.value} for opt in instance.options.all()
+        ]
+        return {
+            "type": instance.type,
+            "question_text": instance.question_text,
+            "placeholder": instance.placeholder,
+            "max_length": instance.max_length,
+            "options": updated_options,
+        }
         
+class QuestionAnswerSerializer(serializers.ModelSerializer):
+    question_text = serializers.CharField(source="question.question_text", read_only=True)
+    user_info = serializers.CharField(source="user.username", read_only=True)
+    class Meta:
+        model = PatientResponse
+        fields = ["id", "user", "question", "question_text", "response_text", "user_info", "created_at", "created_by", "updated_at", "updated_by"]
+        
+        
+        
+class LabReportSerializer(serializers.ModelSerializer):
+    role = serializers.SerializerMethodField()
+    class Meta:
+        model = LabReport
+        fields = ['id', 'patient', 'role', 'report_name', 'report_file', 'date_of_report']        
+    
+    def get_role(self, obj):
+        # Assuming `obj.patient` is related to a user, and user has a 'role' attribute
+        user = obj.patient  # or however the relation is set up
+        return user.role
+    
+    def validate_report_file(self, value):
+        if not value.name.endswith(('.pdf', '.doc', '.docx', '.txt')):
+            raise serializers.ValidationError("Only PDF, DOC, DOCX, or TXT files are allowed.")
+        return value

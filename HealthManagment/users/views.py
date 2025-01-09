@@ -1,8 +1,8 @@
 from rest_framework import generics, permissions
-from .models import Patient, Doctor, Question,DietPlan,Exercise, CustomUser,Option
-from .serializers import PatientSerializer,ExerciseSerializer, DietPlanSerializer,DoctorSerializer, QuestionSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,PhoneNumberSerializer
+from .models import Profile, Doctor, Question,DietPlan,Exercise, CustomUser,Option,PatientResponse, LabReport
+from .serializers import PatientSerializer,ExerciseSerializer, DietPlanSerializer,DoctorSerializer, DoctorRegistrationSerializer, QuestionSerializer,QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,PhoneNumberSerializer,LabReportSerializer
 
-
+from django.contrib.auth.models import Group
 from rest_framework import views, status
 from rest_framework.response import Response
 from rest_framework.generics import GenericAPIView
@@ -61,12 +61,18 @@ class CustomLoginView(LoginView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
+        is_new_user = user.is_first_login
+        if is_new_user:
+            # Mark the user's first login as completed
+            user.is_first_login = False
+            user.save()
         refresh = RefreshToken.for_user(user)
         access_token = str(refresh.access_token)
         refresh_token = str(refresh)
         response_data = {
             'access_token': access_token,
             'refresh_token': refresh_token,
+            'is_new_user': is_new_user,
         }
         response_data.update(CustomUserDetailsSerializer(user).data)
         return Response(response_data, status=status.HTTP_200_OK)
@@ -158,9 +164,12 @@ class SendOrResendSMSAPIView(GenericAPIView):
 
             except CustomUser.DoesNotExist:
                 # If the user does not exist (for registration flow)
-                user = CustomUser(phone_number=phone_number, role='patient', username=phone_number)
-                send_otp(phone_number)   # Send OTP
+                user = CustomUser(phone_number=phone_number, role='patient', username=phone_number, is_first_login=True, password=CustomUser.objects.make_random_password(),)
                 user.save()
+                group = Group.objects.get(name=user.role)
+                user.groups.add(group)
+                send_otp(phone_number)   # Send OTP
+                
                 return Response({"message": "OTP sent for registration.", "is_new_user": True}, status=status.HTTP_200_OK)
         else:
             return Response({"error": "Phone number is required"}, status=status.HTTP_400_BAD_REQUEST)
@@ -171,24 +180,39 @@ class UserListView(generics.ListAPIView):
 class UserEditView(generics.RetrieveUpdateDestroyAPIView):
     queryset = CustomUser.objects.all()
     serializer_class = CustomUserDetailsSerializer
-    
+    permission_classes = [PermissionsManager]
+    codename = 'doctor'
 class PatientListCreateView(generics.ListCreateAPIView):
-    queryset = Patient.objects.all()
+    queryset = Profile.objects.all()
     serializer_class = PatientSerializer
     permission_classes = [PermissionsManager]
-    codename = 'patient'
+    codename = 'profile'
 
 class PatientDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Patient.objects.all()
+    queryset = Profile.objects.all()
     serializer_class = PatientSerializer
     permission_classes = [PermissionsManager]
-    codename = 'patient'
+    codename = 'profile'
     
 class DoctorListCreateView(generics.ListCreateAPIView):
     queryset = Doctor.objects.all()
     serializer_class = DoctorSerializer
     permission_classes = [PermissionsManager]
     codename = 'doctor'
+    
+class DoctorRegistrationAPIView(APIView):
+    serializer_class = DoctorRegistrationSerializer
+    def post(self, request):
+        serializer = DoctorRegistrationSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            # Use the serializer to represent the user data
+            user_data = DoctorRegistrationSerializer(user).data
+            return Response({
+                "message": "Doctor registered successfully.",
+                "user_details": user_data
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class DoctorDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Doctor.objects.all()
@@ -200,13 +224,13 @@ class DietPlanViewSet(viewsets.ModelViewSet):
     queryset = DietPlan.objects.all()
     serializer_class = DietPlanSerializer
     permission_classes = [PermissionsManager]
-    codename = 'doctor'
+    codename = 'dietplan'
 
     def perform_create(self, serializer):
         patient_id = self.request.data.get('patient_id')
         try:
-            patient = Patient.objects.get(id=patient_id)
-        except Patient.DoesNotExist:
+            patient = Profile.objects.get(id=patient_id)
+        except Profile.DoesNotExist:
             raise serializers.ValidationError("Patient does not exist.")
         serializer.save(patient=patient)
     
@@ -236,6 +260,8 @@ class DietPlanViewSet(viewsets.ModelViewSet):
 class QuestionListCreateView(generics.ListCreateAPIView):
     queryset = Question.objects.all()
     pagination_class = ProductPagination
+    permission_classes = [PermissionsManager]
+    codename = 'doctor'
 
     def get_serializer_class(self):
         if self.request.method == 'POST':
@@ -243,19 +269,13 @@ class QuestionListCreateView(generics.ListCreateAPIView):
         return QuestionSerializer
 
     def perform_create(self, serializer):
-        question = serializer.save()
-
-        # Get the options data
-        options_data = self.request.data.get('options', [])
-
-        # Check if the question type is not 'description', because a description type shouldn't have options
-        if question.type != 'description':
-            for option_data in options_data:
-                Option.objects.create(question=question, value=option_data['value'])
-
+        serializer.save()
 class QuestionDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Question.objects.all()
+    serializer_class = QuestionCreateSerializer
     lookup_field = 'id'
+    permission_classes = [PermissionsManager]
+    codename = 'doctor'
 
     def get_serializer_class(self):
         if self.request.method in ['PUT', 'PATCH']:
@@ -263,18 +283,7 @@ class QuestionDetailView(generics.RetrieveUpdateDestroyAPIView):
         return QuestionSerializer
 
     def perform_update(self, serializer):
-        # Update the question
-        question = serializer.save()
-
-        # Update or replace the options if the question is not of type 'description'
-        options_data = self.request.data.get('options', [])
-        if question.type != 'description':
-            # First, delete all existing options
-            question.options.all().delete()
-
-            # Then, recreate options from the incoming data
-            for option_data in options_data:
-                Option.objects.create(question=question, value=option_data['value'])
+        serializer.save()
     
 class ExerciseListCreateView(generics.ListCreateAPIView):
     serializer_class = ExerciseSerializer
@@ -301,3 +310,89 @@ class ExerciseDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         # Ensure users can only access their own exercises
         return Exercise.objects.filter(user=self.request.user) 
+    
+
+class QuestionAnswerListCreateView(APIView):
+    serializer_class = QuestionAnswerSerializer
+    permission_classes = [IsAuthenticated]
+   
+    def get(self, request):
+        """
+        Get all answers by the logged-in user.
+        """
+        answers = PatientResponse.objects.filter(user=request.user)
+        serializer = QuestionAnswerSerializer(answers, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        """
+        Submit answers for specific questions.
+        """
+        data = request.data
+        data["user"] = request.user.id  # Attach the logged-in user
+
+        serializer = QuestionAnswerSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# LabReport ViewSet
+class LabReportViewSet(viewsets.ModelViewSet):
+    queryset = LabReport.objects.all()
+    serializer_class = LabReportSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        # Ensure user is authenticated
+        if user.is_authenticated:
+            if user.groups.filter(name='doctor').exists():  # Check if the user has the 'doctor' role
+                return LabReport.objects.all()
+            return LabReport.objects.filter(patient=user)
+        return LabReport.objects.none()  # If the user is not authenticated, return no reports
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response(serializer.data)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+class DashboardView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Retrieve data for the logged-in patient (user)
+        patient = request.user
+
+        # Get data related to the patient
+        total_diets = DietPlan.objects.filter(patient=patient).count()
+        total_exercises = Exercise.objects.filter(user=patient).count()
+        total_lab_reports = LabReport.objects.filter(patient=patient).count()
+
+        # Return the summary data as a response
+        dashboard_data = {
+            "total_diets": total_diets,
+            "total_exercises": total_exercises,
+            "total_lab_reports": total_lab_reports,
+        }
+        return Response(dashboard_data)
