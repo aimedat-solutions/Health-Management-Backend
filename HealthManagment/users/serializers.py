@@ -4,8 +4,11 @@ from django.contrib.auth import get_user_model
 from phonenumber_field.serializerfields import PhoneNumberField
 from django.contrib.auth.models import Group, Permission
 from .utils import send_otp, verify_otp
-from .models import Doctor, Question, Profile,DietPlan,Exercise, CustomUser, Option, PatientResponse,LabReport
+from .models import  Question, Profile,DietPlan,Exercise, CustomUser, Option, PatientResponse,LabReport
 import re
+from django.utils.text import slugify
+from rest_framework.exceptions import ValidationError
+
 User = get_user_model()
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -56,6 +59,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         )
         # Add the user to the appropriate group based on their role
         group = Group.objects.get(name=role)
+        Profile.objects.create(user=user)
         user.groups.add(group)
         
         # If a phone number is provided, add it to the user and send an OTP
@@ -80,7 +84,7 @@ class UserLoginSerializer(serializers.Serializer):
         otp = attrs.get('otp')
 
         if email and password:
-            user = CustomUser.objects.filter(email=email).first()
+            user = CustomUser.objects.filter(username=email).first()
             if not user:
                 raise serializers.ValidationError("Invalid email or password.")
         elif phone_number and otp:
@@ -115,97 +119,61 @@ class CustomUserSerializer(serializers.ModelSerializer):
         extra_kwargs = {'password': {'write_only': True}}
 
 
-class DoctorSerializer(serializers.ModelSerializer):
-    user = CustomUserSerializer()
-
-    class Meta:
-        model = Doctor
-        fields = ['id', 'user', 'specialty']
-
 class PatientSerializer(serializers.ModelSerializer):
-    user = CustomUserSerializer()
+    # user = CustomUserSerializer()
+    pass
 
+class ProfileSerializer(serializers.ModelSerializer):
+    role = serializers.CharField(source='user.role', read_only=True)
+    phone_number = serializers.CharField(source='user.phone_number', read_only=True)
     class Meta:
         model = Profile
-        fields = ['id', 'user', 'first_name', 'last_name', 'date_of_birth', 'gender', 'address', "created_at", "created_by", "updated_at", "updated_by"]
+        fields = [
+            'first_name', 'last_name', 'date_of_birth', 'age', 'gender',
+            'address', 'specialization', 'profile_image', 'calories', 
+            'height', 'weight', 'role', 'phone_number', 
+        ]
         
-    def create(self, validated_data):
-        user_data = validated_data.pop('user')
-        user = User.objects.create(**user_data)
-        patient = Profile.objects.create(user=user, **validated_data)
-        return patient
-
-    def update(self, instance, validated_data):
-        user_data = validated_data.pop('user')
-        user = instance.user
-
-        instance.first_name = validated_data.get('first_name', instance.first_name)
-        instance.last_name = validated_data.get('last_name', instance.last_name)
-        instance.date_of_birth = validated_data.get('date_of_birth', instance.date_of_birth)
-        instance.gender = validated_data.get('gender', instance.gender)
-        instance.address = validated_data.get('address', instance.address)
-        instance.phone_number = validated_data.get('phone_number', instance.phone_number)
-        instance.health_status = validated_data.get('health_status', instance.health_status)
-        instance.save()
-
-        user.role = user_data.get('role', user.role)
-        user.is_active = user_data.get('is_active', user.is_active)
-        user.is_staff = user_data.get('is_staff', user.is_staff)
-        user.save()
-
-        return instance
     
 class DoctorRegistrationSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ['id', 'phone_number', 'role']  # Add other fields if required
+        fields = ['id', 'phone_number']  # Include only relevant fields
         read_only_fields = ['id', 'role'] 
 
     def create(self, validated_data):
-        # Set default role as 'doctor'
-        validated_data['role'] = 'doctor'
-        validated_data['username'] = validated_data['phone_number']
-        validated_data['password']=CustomUser.objects.make_random_password()
-        group = Group.objects.get(name=validated_data['role'])
-        user = CustomUser.objects.create(**validated_data)
-        user.groups.add(group)
-        user.save()
-        send_otp(validated_data['phone_number'])
-        return user
+        phone_number = validated_data.get('phone_number')
 
-
-class DoctorSerializer(serializers.ModelSerializer):
-    user = CustomUserSerializer()
-
-    class Meta:
-        model = Doctor
-        fields = ['id', 'user', 'specialty']
-
-    def create(self, validated_data):
-        user_data = validated_data.pop('user')
-        user = User.objects.create(**user_data)
-        doctor = Doctor.objects.create(user=user, **validated_data)
-        return doctor
-
-    def update(self, instance, validated_data):
-        user_data = validated_data.pop('user')
-        user = instance.user
-
-        instance.specialty = validated_data.get('specialty', instance.specialty)
-        instance.save()
-
-        user.role = user_data.get('role', user.role)
-        user.is_active = user_data.get('is_active', user.is_active)
-        user.is_staff = user_data.get('is_staff', user.is_staff)
-        user.save()
-
-        return instance
+        try:
+            user = CustomUser.objects.get(phone_number=phone_number)
+            send_otp(phone_number)
+            return user
+        except CustomUser.DoesNotExist:
+            validated_data['role'] = 'doctor'
+            base_username = slugify(phone_number)
+            username = base_username
+            num_suffix = 1
+            while CustomUser.objects.filter(username=username).exists():
+                username = f"{base_username}_{num_suffix}"
+                num_suffix += 1
+            
+            validated_data['username'] = username
+            validated_data['password'] = CustomUser.objects.make_random_password()
+            group = Group.objects.get(name=validated_data['role'])
+            user = CustomUser.objects.create(**validated_data)
+            
+            Profile.objects.create(user=user)
+            user.groups.add(group)
+            user.save()
+            send_otp(phone_number)
+            return user
+        
 
 class DietPlanSerializer(serializers.ModelSerializer):
     meal_plan = serializers.ListField(child=serializers.CharField())
     class Meta:
         model = DietPlan
-        fields = ['id', 'patient', 'date', 'diet_name', 'time_of_day', 'meal_plan',"created_at", "created_by", "updated_at", "updated_by"]
+        fields = ['id', 'patient', 'date', 'title', 'meal_plan','blood_sugar_range', 'trimster', 'meal_time', "created_at", "created_by", "updated_at", "updated_by"]
 
     def create(self, validated_data):
         request = self.context.get('request')
@@ -225,7 +193,7 @@ class ExerciseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Exercise
         fields = [
-            'id', 'user', 'exercise_name', 'exercise_type', 'duration', 
+            'id', 'user', 'exercise_name', 'exercise_type', 'duration', 'image_content', 'video_content',
             'intensity', 'calories_burned', 'date', "created_at", "created_by", "updated_at", "updated_by"
         ]
         read_only_fields = ['user', 'created_at', 'updated_at']

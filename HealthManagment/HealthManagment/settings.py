@@ -46,10 +46,13 @@ INSTALLED_APPS = [
     'dj_rest_auth',
     'drf_spectacular',
     'corsheaders',
+    'django_filters',
     'rest_framework',
     'rest_framework_simplejwt', 
     'rest_framework_simplejwt.token_blacklist',
     'users',
+    'doctor',
+    'patient',
 ]
 
 MIDDLEWARE = [
@@ -75,7 +78,7 @@ JWT_AUTH_COOKIE = 'allauth'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': ['build', 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
