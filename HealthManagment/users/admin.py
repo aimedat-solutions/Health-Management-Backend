@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Doctor, DietPlan,Question,Exercise, Profile, CustomUser,Option,DoctorExerciseResponse,PatientResponse
+from .models import DietPlan,Question,Exercise, Profile, CustomUser,Option,DoctorExerciseResponse,PatientResponse
 
 
 
@@ -7,7 +7,6 @@ from .models import Doctor, DietPlan,Question,Exercise, Profile, CustomUser,Opti
 
 admin.site.register(CustomUser)
 admin.site.register(Profile)
-admin.site.register(Doctor)
 admin.site.register(DietPlan)
 admin.site.register(Exercise)
 admin.site.register(DoctorExerciseResponse)
