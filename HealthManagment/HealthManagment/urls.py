@@ -19,7 +19,7 @@ from django.views.generic import TemplateView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from users.views import ( 
  SendOrResendSMSAPIView,
- UserListView,  
+ ProfileAPIView,  
  CustomLoginView,UserRegistrationAPIView,LogoutAPIView,
 )
 urlpatterns = [
@@ -28,7 +28,10 @@ urlpatterns = [
     path('', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     path("home/", TemplateView.as_view(template_name="index.html")),
     path('api-auth/', include('rest_framework.urls', namespace='rest_framework')),
+    path('request-otp/', SendOrResendSMSAPIView.as_view(), name='send-sms'),
+    path('verify-otp/', CustomLoginView.as_view(), name='login'),
     path('admin-panel/', include('users.urls')),
-    path('doctor/', include('doctor.urls')),
-    path('patient/', include('patient.urls')), 
+    path('profile/', ProfileAPIView.as_view(), name='profile-api'),
+    # path('doctor/', include('doctor.urls')),
+    # path('patient/', include('patient.urls')), 
 ]

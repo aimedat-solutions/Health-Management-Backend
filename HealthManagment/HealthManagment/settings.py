@@ -16,6 +16,7 @@ import os
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 from datetime import timedelta
 BASE_DIR = Path(__file__).resolve().parent.parent
+DJANGO_ENV = config('DJANGO_ENV', default='development')
 
 
 # Quick-start development settings - unsuitable for production
@@ -43,6 +44,8 @@ INSTALLED_APPS = [
     'django.contrib.sites',
     'allauth',
     'allauth.account',
+    'allauth.socialaccount',
+    'allauth.socialaccount.providers.google', 
     'dj_rest_auth',
     'drf_spectacular',
     'corsheaders',
