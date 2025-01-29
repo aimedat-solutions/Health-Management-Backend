@@ -27,7 +27,7 @@ from .utils import send_otp, verify_otp
 from .pagination import Pagination
 from django_filters.rest_framework import DjangoFilterBackend
 from .filters import CustomUserFilter, DietPlanFilter,ExerciseFilter
-
+import os
 class UserRegistrationAPIView(APIView):
     serializer_class = UserRegistrationSerializer
     def post(self, request):
@@ -58,18 +58,17 @@ class CustomLoginView(LoginView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
-        # is_new_user = user.is_first_login
-        # if is_new_user:
-        #     # Mark the user's first login as completed
-        #     user.is_first_login = False
-        user.save()
+        is_new_user = user.is_first_login
+        if is_new_user:
+            user.is_first_login = False
+            user.save()
         refresh = RefreshToken.for_user(user)
         access_token = str(refresh.access_token)
         refresh_token = str(refresh)
         response_data = {
             'access_token': access_token,
             'refresh_token': refresh_token,
-            # 'is_new_user': is_new_user,   
+            'is_new_user': is_new_user,   
         }
         response_data.update(CustomUserDetailsSerializer(user).data)
         return Response(response_data, status=status.HTTP_200_OK)
@@ -150,24 +149,37 @@ class SendOrResendSMSAPIView(GenericAPIView):
     """
     def post(self, request):
         phone_number = request.data.get("phone_number", None)
+        environment = os.getenv('DJANGO_ENV', 'development')
 
         if phone_number:
             try:
                 user = CustomUser.objects.get(phone_number=phone_number)
-                send_otp(phone_number) 
-                user.save()
-                return Response({"message": "OTP sent for login.", "is_new_user": False}, status=status.HTTP_200_OK)
+
+                if environment in ['production', 'staging']:
+                    send_otp(phone_number)  # Send OTP only in production or staging
+                    return Response({"message": "OTP sent for login.", "is_new_user": False}, status=status.HTTP_200_OK)
+                else:
+                    return Response({"message": "OTP sending is disabled in this environment."}, status=status.HTTP_200_OK)
 
             except CustomUser.DoesNotExist:
-                user = CustomUser(phone_number=phone_number, role='patient', username=phone_number, is_first_login=True, password=CustomUser.objects.make_random_password(),)
+                user = CustomUser(
+                    phone_number=phone_number, 
+                    role='patient', 
+                    username=phone_number, 
+                    is_first_login=True, 
+                    password=CustomUser.objects.make_random_password()
+                )
                 user.save()
                 group = Group.objects.get(name=user.role)
                 user.groups.add(group)
-                Profile.objects.create(
-                    user=user,
-                )
-                send_otp(phone_number)  
-                return Response({"message": "OTP sent for registration.", "is_new_user": True}, status=status.HTTP_200_OK)
+                if not Profile.objects.filter(user=user).exists():
+                    Profile.objects.create(user=user)
+
+                if environment in ['production', 'staging']:
+                    send_otp(phone_number)  # Send OTP only in production or staging
+                    return Response({"message": "OTP sent for registration.", "is_new_user": True}, status=status.HTTP_200_OK)
+                else:
+                    return Response({"message": "OTP sending is disabled in this environment."}, status=status.HTTP_200_OK)
         else:
             return Response({"error": "Phone number is required"}, status=status.HTTP_400_BAD_REQUEST)
         
