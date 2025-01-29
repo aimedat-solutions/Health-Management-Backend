@@ -5,7 +5,7 @@ from phonenumber_field.serializerfields import PhoneNumberField
 from django.contrib.auth.models import Group, Permission
 from .utils import send_otp, verify_otp
 from .models import  Question, Profile,DietPlan,Exercise, CustomUser, Option, PatientResponse,LabReport
-import re
+import re,os
 from django.utils.text import slugify
 from rest_framework.exceptions import ValidationError
 
@@ -82,6 +82,8 @@ class UserLoginSerializer(serializers.Serializer):
         password = attrs.get('password')
         phone_number = attrs.get('phone_number')
         otp = attrs.get('otp')
+        
+        environment = os.getenv('DJANGO_ENV', 'development')
 
         if email and password:
             user = CustomUser.objects.filter(username=email).first()
@@ -91,9 +93,15 @@ class UserLoginSerializer(serializers.Serializer):
             user = CustomUser.objects.filter(phone_number=phone_number).first()
             if not user:
                 raise serializers.ValidationError("User with this phone number does not exist.")
-            response = verify_otp(phone_number, otp)
-            if response['type'] != 'success':
-                raise serializers.ValidationError("OTP verification failed.")
+            if environment in ['production', 'staging']:
+                # Verify OTP in production and staging
+                response = verify_otp(phone_number, otp)
+                if response['type'] != 'success':
+                    raise serializers.ValidationError("OTP verification failed.")
+            else:
+                # In non-production environments, verify with random OTP `1234`
+                if otp != '1234':
+                    raise serializers.ValidationError("Invalid OTP.")
         else:
             raise serializers.ValidationError("Must include either email and password or phone number and OTP.")
 

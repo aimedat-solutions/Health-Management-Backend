@@ -8,6 +8,7 @@ from django.utils import timezone
 from django.utils.crypto import get_random_string
 from users.utils import send_otp
 from django.core.exceptions import ValidationError
+from .middleware import get_current_user
 
 
 class AuditModel(models.Model):
@@ -43,12 +44,13 @@ class AuditModel(models.Model):
 
 class CustomUser(User, AuditModel):
     ROLE_CHOICES = [
+        ('superadmin', 'SuperAdmin'),
         ('admin', 'Admin'),
         ('doctor', 'Doctor'),
         ('patient', 'Patient'),
     ]
     
-    role = models.CharField(max_length=10, choices=ROLE_CHOICES)
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default="patient")
     phone_number = PhoneNumberField(max_length=15, blank=True, null=True)
     security_code = models.CharField(max_length=120, blank=True, null=True)
     is_verified = models.BooleanField(default=False)
@@ -56,8 +58,16 @@ class CustomUser(User, AuditModel):
     is_first_login = models.BooleanField(default=True)
     
     def __str__(self):
-        return f"{self.role} . {self.phone_number}"
+        return f"{self.role} . {self.username}"
     
+    def save(self, *args, **kwargs):       
+        if self:
+            if self.role == "superadmin" and self.role != "admin":
+                raise ValidationError("SuperAdmin can only create Admin users.")
+            elif self.role == "admin" and self.role != "doctor":
+                raise ValidationError("Admin can only create Doctor users.")
+        super().save(*args, **kwargs)
+        
     def generate_security_code(self):
         """ Generate a random security code (OTP). """
         token_length = getattr(settings, "TOKEN_LENGTH", 6)
@@ -177,7 +187,7 @@ class Profile(AuditModel):
         ('male', 'Male'),
         ('female', 'Female'),
     ]
-    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='user_profile')
+    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='profile')
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
     date_of_birth = models.DateField(null=True, blank=True)
