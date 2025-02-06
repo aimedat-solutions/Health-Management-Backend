@@ -14,13 +14,13 @@ router.register(r'lab-reports', LabReportViewSet, basename='labreport')
 
 urlpatterns = [
     path('', include(router.urls)),
-    path('login/', CustomLoginView.as_view(), name='login'),
-    path('register/', SendOrResendSMSAPIView.as_view(), name='send-sms'),
-    path('profile/', ProfileAPIView.as_view(), name='profile-api'),    
+    # path('login/', CustomLoginView.as_view(), name='login'),
+    # path('register/', SendOrResendSMSAPIView.as_view(), name='send-sms'),
+    # path('profile/', ProfileAPIView.as_view(), name='profile-api'),    
     path('diet-plans/<int:patient_id>/<str:selected_date>/', DietPlanViewSet.as_view({'get': 'retrieve'}), name='diet-plan-retrieve-date'),
     path('view-health-status/', ViewHealthStatusView.as_view(), name='view-health-status'),
     path('exercises/', ExerciseListCreateView.as_view(), name='exercise-list-create'),
-    path('logout/', LogoutAPIView.as_view(), name='logout'),
+    # path('logout/', LogoutAPIView.as_view(), name='logout'),
 ]
 
 
