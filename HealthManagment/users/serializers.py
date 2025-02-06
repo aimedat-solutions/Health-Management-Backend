@@ -117,7 +117,7 @@ class PhoneNumberSerializer(serializers.ModelSerializer):
 class CustomUserDetailsSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ('pk', 'username', 'email', 'role', 'phone_number', "created_at", "created_by", "updated_at", "updated_by")
+        fields = ('pk', 'username', 'email', 'role', 'first_name', 'last_name', 'phone_number', "created_at", "created_by", "updated_at", "updated_by")
         read_only_fields = ('email',)
 
 class CustomUserSerializer(serializers.ModelSerializer):
@@ -126,10 +126,6 @@ class CustomUserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'email', 'role', 'phone_number','password']
         extra_kwargs = {'password': {'write_only': True}}
 
-
-class PatientSerializer(serializers.ModelSerializer):
-    # user = CustomUserSerializer()
-    pass
 
 class ProfileSerializer(serializers.ModelSerializer):
     role = serializers.CharField(source='user.role', read_only=True)

@@ -32,14 +32,12 @@ class PermissionsManager(permissions.BasePermission):
                 return True
         raise PermissionDenied(detail=f"You do not have permission to {prefixer} {view.codename}.")
     
-class IsUserProfileOwner(BasePermission):
-    def has_object_permission(self, request, view, obj):
-        return obj.user == request.user or request.user.is_staff
-
-
-class IsUserAddressOwner(BasePermission):
+class IsSuperAdmin(permissions.BasePermission):
+    """Allows access only to superadmins."""
     def has_permission(self, request, view):
-        return request.user.is_authenticated is True
+        return request.user.is_authenticated and request.user.role == "superadmin"
 
-    def has_object_permission(self, request, view, obj):
-        return obj.user == request.user or request.user.is_staff
+class IsAdmin(permissions.BasePermission):
+    """Allows access only to admins."""
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role == "admin"

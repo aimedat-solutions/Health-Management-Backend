@@ -1,5 +1,5 @@
 from django.db import models
-from django.contrib.auth.models import User
+from django.contrib.auth.models import AbstractUser
 from django.conf import settings    
 import datetime
 import logging
@@ -42,7 +42,7 @@ class AuditModel(models.Model):
         super().save(*args, **kwargs)
 
 
-class CustomUser(User, AuditModel):
+class CustomUser(AbstractUser, AuditModel):
     ROLE_CHOICES = [
         ('superadmin', 'SuperAdmin'),
         ('admin', 'Admin'),
@@ -61,11 +61,13 @@ class CustomUser(User, AuditModel):
         return f"{self.role} . {self.username}"
     
     def save(self, *args, **kwargs):       
-        if self:
-            if self.role == "superadmin" and self.role != "admin":
+        request = kwargs.pop('request', None)  # Extract the request user if passed
+        if request:
+            if request.user.role == "superadmin" and self.role not in ["admin", "superadmin"]:
                 raise ValidationError("SuperAdmin can only create Admin users.")
-            elif self.role == "admin" and self.role != "doctor":
+            elif request.user.role == "admin" and self.role != "doctor":
                 raise ValidationError("Admin can only create Doctor users.")
+
         super().save(*args, **kwargs)
         
     def generate_security_code(self):

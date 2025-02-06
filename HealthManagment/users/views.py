@@ -1,6 +1,6 @@
 from rest_framework import generics, permissions
 from .models import Profile, Question,DietPlan,Exercise, CustomUser,Option,PatientResponse, LabReport
-from .serializers import PatientSerializer,ExerciseSerializer, ProfileSerializer, DietPlanSerializer, DoctorRegistrationSerializer, QuestionSerializer,QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,PhoneNumberSerializer,LabReportSerializer
+from .serializers import ExerciseSerializer, ProfileSerializer, DietPlanSerializer, DoctorRegistrationSerializer, QuestionSerializer,QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,PhoneNumberSerializer,LabReportSerializer
 
 from django.contrib.auth.models import Group
 from rest_framework import views, status
@@ -17,7 +17,7 @@ from django.conf import settings
 from django.contrib.auth import logout as django_logout
 from django.core.exceptions import ObjectDoesNotExist
 from drf_spectacular.utils import extend_schema
-from users.permissions import PermissionsManager
+from users.permissions import PermissionsManager,IsSuperAdmin, IsAdmin
 from rest_framework import viewsets
 from rest_framework import serializers
 from rest_framework import generics
@@ -217,27 +217,44 @@ class ProfileAPIView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except Profile.DoesNotExist:
             return Response({"error": "Profile not found"}, status=status.HTTP_404_NOT_FOUND)
-class UserListView(generics.ListCreateAPIView):
+class UserListCreateView(generics.ListCreateAPIView):
+    """Superadmins and Admins can list users"""
     queryset = CustomUser.objects.all()
     serializer_class = CustomUserDetailsSerializer
-    permission_classes = [PermissionsManager]
+    permission_classes = [IsSuperAdmin | IsAdmin]
     filter_backends = [DjangoFilterBackend]
     filterset_class = CustomUserFilter
-    codename = 'user'
     
-  
-class PatientListCreateView(generics.ListCreateAPIView):
-    queryset = Profile.objects.all()
-    serializer_class = PatientSerializer
-    permission_classes = [PermissionsManager]
-    codename = 'profile'
+class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Superadmins and Admins can manage users"""
+    queryset = CustomUser.objects.all()
+    serializer_class = CustomUserDetailsSerializer
+    permission_classes = [IsSuperAdmin | IsAdmin]
+    
+class AdminCreateView(generics.CreateAPIView):
+    """Only Superadmins can create Admin users"""
+    queryset = CustomUser.objects.filter(role='admin')
+    serializer_class = CustomUserDetailsSerializer
+    permission_classes = [IsSuperAdmin]
 
-class PatientDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Profile.objects.all()
-    serializer_class = PatientSerializer
-    permission_classes = [PermissionsManager]
-    codename = 'profile'
-    
+    def perform_create(self, serializer):
+        serializer.save(role='admin')
+
+class DoctorListCreateView(generics.ListCreateAPIView):
+    """Only Admins can create and list Doctors"""
+    queryset = CustomUser.objects.filter(role='doctor')
+    serializer_class = CustomUserDetailsSerializer
+    permission_classes = [IsAdmin]
+
+    def perform_create(self, serializer):
+        serializer.save(role='doctor')
+
+class DoctorDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Only Admins can manage Doctors"""
+    queryset = CustomUser.objects.filter(role='doctor')
+    serializer_class = CustomUserDetailsSerializer
+    permission_classes = [IsAdmin]
+ 
     
 class DoctorRegistrationAPIView(APIView):
     serializer_class = DoctorRegistrationSerializer

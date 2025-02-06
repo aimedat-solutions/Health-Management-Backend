@@ -30,8 +30,9 @@ urlpatterns = [
     path('api-auth/', include('rest_framework.urls', namespace='rest_framework')),
     path('request-otp/', SendOrResendSMSAPIView.as_view(), name='send-sms'),
     path('verify-otp/', CustomLoginView.as_view(), name='login'),
+    path('logout/', LogoutAPIView.as_view(), name='logout'),
     path('admin-panel/', include('users.urls')),
     path('profile/', ProfileAPIView.as_view(), name='profile-api'),
-    # path('doctor/', include('doctor.urls')),
-    # path('patient/', include('patient.urls')), 
+    path('doctor/', include('doctor.urls')),
+    path('patient/', include('patient.urls')), 
 ]
