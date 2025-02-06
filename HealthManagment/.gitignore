@@ -1,6 +1,7 @@
 .env
 db.sqlite3
 */migrations
+users/migrations/
 **/__pycache__
 **/__pycache__/*
 .idea/
