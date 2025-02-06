@@ -14,7 +14,9 @@ from pathlib import Path
 from decouple import config, Csv
 import os
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
+from datetime import timedelta
 BASE_DIR = Path(__file__).resolve().parent.parent
+DJANGO_ENV = config('DJANGO_ENV', default='development')
 
 
 # Quick-start development settings - unsuitable for production
@@ -42,12 +44,18 @@ INSTALLED_APPS = [
     'django.contrib.sites',
     'allauth',
     'allauth.account',
+    'allauth.socialaccount',
+    'allauth.socialaccount.providers.google', 
     'dj_rest_auth',
     'drf_spectacular',
+    'corsheaders',
+    'django_filters',
     'rest_framework',
     'rest_framework_simplejwt', 
     'rest_framework_simplejwt.token_blacklist',
     'users',
+    'doctor',
+    'patient',
 ]
 
 MIDDLEWARE = [
@@ -58,7 +66,12 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'users.middleware.AuditMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
+
 ]
+
+CORS_ALLOW_ALL_ORIGINS = True 
 
 ROOT_URLCONF = 'HealthManagment.urls'
 
@@ -68,7 +81,7 @@ JWT_AUTH_COOKIE = 'allauth'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': ['build', 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -126,6 +139,8 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
     'BLACKLIST_AFTER_ROTATION': True,
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 }
 # Internationalization
 # https://docs.djangoproject.com/en/4.0/topics/i18n/
@@ -138,7 +153,7 @@ USE_I18N = True
 
 USE_TZ = True
 
-AUTH_USER_MODEL = 'auth.User'
+AUTH_USER_MODEL = 'users.CustomUser'
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.0/howto/static-files/
@@ -155,7 +170,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'MHealth App API',
-    'DESCRIPTION': 'mHealth Management API',
+    'DESCRIPTION': 'MHealth Management API',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
 }

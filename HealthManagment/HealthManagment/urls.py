@@ -17,12 +17,22 @@ from django.contrib import admin
 from django.urls import path, include
 from django.views.generic import TemplateView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
-
+from users.views import ( 
+ SendOrResendSMSAPIView,
+ ProfileAPIView,  
+ CustomLoginView,UserRegistrationAPIView,LogoutAPIView,
+)
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     path("home/", TemplateView.as_view(template_name="index.html")),
     path('api-auth/', include('rest_framework.urls', namespace='rest_framework')),
-    path('', include('users.urls')),
+    path('request-otp/', SendOrResendSMSAPIView.as_view(), name='send-sms'),
+    path('verify-otp/', CustomLoginView.as_view(), name='login'),
+    path('logout/', LogoutAPIView.as_view(), name='logout'),
+    path('admin-panel/', include('users.urls')),
+    path('profile/', ProfileAPIView.as_view(), name='profile-api'),
+    path('doctor/', include('doctor.urls')),
+    path('patient/', include('patient.urls')), 
 ]
