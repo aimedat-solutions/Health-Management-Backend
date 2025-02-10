@@ -177,7 +177,7 @@ class DietPlanSerializer(serializers.ModelSerializer):
     meal_plan = serializers.ListField(child=serializers.CharField())
     class Meta:
         model = DietPlan
-        fields = ['id', 'patient', 'date', 'title', 'meal_plan','blood_sugar_range', 'trimster', 'meal_time', "created_at", "created_by", "updated_at", "updated_by"]
+        fields = ['id', 'patient', 'date', 'title', 'meal_plan','blood_sugar_range', 'trimester', 'meal_time', "created_at", "created_by", "updated_at", "updated_by"]
 
     def create(self, validated_data):
         request = self.context.get('request')

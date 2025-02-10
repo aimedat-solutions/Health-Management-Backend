@@ -2,15 +2,20 @@ from django_filters import rest_framework as filters
 from .models import CustomUser, DietPlan, LabReport,Exercise
 
 class DietPlanFilter(filters.FilterSet):
+    """
+    Filter set for DietPlan model.
+    """
     patient_name = filters.CharFilter(field_name="patient__username", lookup_expr='icontains')
-    created_by = filters.CharFilter(field_name="created_by__username", lookup_expr='icontains')
+    doctor_name = filters.CharFilter(field_name="doctor__username", lookup_expr='icontains')
     date = filters.DateFilter(field_name="date")
     date_range = filters.DateFromToRangeFilter(field_name="date")
-    calorie_intake = filters.RangeFilter(field_name="calorie_intake")
+    blood_sugar_range = filters.CharFilter(field_name="blood_sugar_range", lookup_expr='icontains')
+    meal_time = filters.CharFilter(field_name="meal_time", lookup_expr='icontains')
+    trimester = filters.CharFilter(field_name="trimester", lookup_expr='icontains')
 
     class Meta:
         model = DietPlan
-        fields = ['patient_name', 'created_by', 'date', 'date_range', 'calorie_intake']
+        fields = ['patient_name', 'doctor_name', 'date', 'date_range', 'blood_sugar_range', 'meal_time', 'trimester']
         
 class LabReportFilter(filters.FilterSet):
     patient_name = filters.CharFilter(field_name="patient__username", lookup_expr='icontains')
