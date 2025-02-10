@@ -217,16 +217,19 @@ class Profile(AuditModel):
         return f"{self.first_name} - {self.user.role}"
 
 class DietPlan(AuditModel):
-    patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="assigned_diets")
-    doctor = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="created_diets")
-    date = models.DateField()
+    patient = models.ForeignKey(CustomUser , on_delete=models.CASCADE, related_name="assigned_diets")
+    doctor = models.ForeignKey(CustomUser , on_delete=models.CASCADE, related_name="created_diets")
+    date = models.DateField(default=datetime.date.today)
     title = models.CharField(max_length=100)
-    blood_sugar_range = models.CharField(max_length=50)
-    meal_time = models.CharField(max_length=50)
-    trimster = models.CharField(max_length=50)  
-    meal_plan = models.JSONField()
-    doctor_comment = models.TextField(blank=True, null=True)  # New field for doctor comments
+    blood_sugar_range = models.CharField(max_length=50, choices=[("low", "Low"), ("normal", "Normal"), ("high", "High")])
+    meal_time = models.CharField(max_length=50, choices=[("morning", "Morning"), ("afternoon", "Afternoon"), ("evening", "Evening")])
+    trimester = models.CharField(max_length=50)
+    meal_plan = models.JSONField(help_text="Enter the meal plan in JSON format")
+    doctor_comment = models.TextField(blank=True, null=True, verbose_name="Doctor's Comments")
 
+    class Meta:
+        unique_together = ("patient", "date")
+        
     def __str__(self):
         return f"{self.title} for {self.patient.first_name} on {self.date}"
     
