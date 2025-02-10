@@ -1,7 +1,7 @@
 from rest_framework import generics, permissions
-from .models import Profile, Question,DietPlan,Exercise, CustomUser,Option,PatientResponse, LabReport
+from .models import Profile, Question,DietPlan,Exercise, CustomUser,Option,PatientResponse, LabReport,DoctorExerciseResponse,HealthStatus
 from .serializers import ExerciseSerializer, ProfileSerializer, DietPlanSerializer, DoctorRegistrationSerializer, QuestionSerializer,QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,PhoneNumberSerializer,LabReportSerializer
-
+from django.db.models import Count
 from django.contrib.auth.models import Group
 from rest_framework import views, status
 from rest_framework.response import Response
@@ -327,11 +327,12 @@ class DietPlanViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         
-    # def get_queryset(self):
-    #     user = self.request.user
-    #     if hasattr(user, 'doctor' and 'admin'):
-    #         return DietPlan.objects.filter(patient__doctor=user.doctor)
-    #     return DietPlan.objects.none()
+    def get_queryset(self):
+        user = self.request.user
+        if hasattr(user, 'doctor'):
+            return DietPlan.objects.filter(patient__doctor=user.doctor)
+        return DietPlan.objects.none()
+
 
 class QuestionListCreateView(generics.ListCreateAPIView):
     queryset = Question.objects.all()
@@ -405,21 +406,105 @@ class QuestionAnswerListCreateView(APIView):
 
 
 class DashboardView(APIView):
-    permission_classes = [PermissionsManager]
-    codename = 'patientresponse'
+    permission_classes = [PermissionsManager]  # Ensure only authenticated users can access
+
     def get(self, request):
-        # Retrieve data for the logged-in patient (user)
-        patient = request.user
+        """
+        API Endpoint to fetch dashboard details for Doctor, Patient, and Admin.
+        Returns relevant analytics based on user role.
+        """
+        user = request.user
+        role = getattr(user, "role", None)  # Ensure role exists
 
-        # Get data related to the patient
-        total_diets = DietPlan.objects.filter(patient=patient).count()
-        total_exercises = Exercise.objects.filter(user=patient).count()
-        total_lab_reports = LabReport.objects.filter(patient=patient).count()
+        if not role:
+            return Response({"error": "User role not found"}, status=400)
 
-        # Return the summary data as a response
-        dashboard_data = {
-            "total_diets": total_diets,
-            "total_exercises": total_exercises,
-            "total_lab_reports": total_lab_reports,
-        }
-        return Response(dashboard_data)
+        response_data = {"role": role}
+
+        if role == "doctor":
+            total_patients = CustomUser.objects.filter(role="patient", created_diets__doctor=user).distinct().count()
+            total_diet_plans = DietPlan.objects.filter(doctor=user).count()
+            active_patients = CustomUser.objects.filter(
+                role="patient", assigned_diets__doctor=user, healthstatus__status="Improving"
+            ).distinct().count()
+
+            patient_engagement_rate = (
+                round((active_patients / total_patients) * 100, 2) if total_patients else 0
+            )
+
+            total_diet_plans_count = DietPlan.objects.filter(doctor=user).count()
+            diet_effectiveness = (
+                round(
+                    HealthStatus.objects.filter(user__role="patient", status="Improving").count() /
+                    total_diet_plans_count * 100, 2
+                ) if total_diet_plans_count else 0
+            )
+
+            total_exercises = Exercise.objects.filter(patient__in=CustomUser.objects.filter(role="patient")).count()
+            completed_exercises = Exercise.objects.filter(patient__in=CustomUser.objects.filter(role="patient"), completed=True).count()
+
+            exercise_compliance = (
+                round((completed_exercises / total_exercises) * 100, 2) if total_exercises else 0
+            )
+
+            response_data.update({
+                "total_patients": total_patients,
+                "total_diet_plans": total_diet_plans,
+                "patient_engagement_rate": patient_engagement_rate,
+                "diet_effectiveness": diet_effectiveness,
+                "exercise_compliance_rate": exercise_compliance,
+            })
+
+        elif role == "patient":
+            total_diets = DietPlan.objects.filter(patient=user).count()
+            total_exercises = Exercise.objects.filter(patient=user).count()
+            latest_health_status = HealthStatus.objects.filter(user=user).order_by("-created_at").first()
+            avg_calories_burned = Exercise.objects.filter(patient=user).aggregate(Avg("calories_burned"))["calories_burned__avg"] or 0
+
+            completed_exercises = Exercise.objects.filter(patient=user, completed=True).count()
+            goal_achievement_rate = (
+                round((completed_exercises / total_exercises) * 100, 2) if total_exercises else 0
+            )
+
+            response_data.update({
+                "total_diets": total_diets,
+                "total_exercises": total_exercises,
+                "latest_health_status": latest_health_status.status if latest_health_status else "No status available",
+                "average_calories_burned_per_week": avg_calories_burned,
+                "goal_achievement_rate": goal_achievement_rate,
+            })
+
+        elif role == "admin":
+            total_patients = CustomUser.objects.filter(role="patient").count()
+            total_doctors = CustomUser.objects.filter(role="doctor").count()
+            total_diet_plans = DietPlan.objects.count()
+            total_exercises = Exercise.objects.count()
+            monthly_growth = CustomUser.objects.filter(date_joined__month=2).count()
+
+            top_doctor = (
+                CustomUser.objects.filter(role="doctor")
+                .annotate(patient_count=Count("created_diets"))
+                .order_by("-patient_count")
+                .first()
+            )
+
+            most_popular_diet = (
+                DietPlan.objects.annotate(patient_count=Count("patient"))
+                .order_by("-patient_count")
+                .first()
+            )
+
+            response_data.update({
+                "total_patients": total_patients,
+                "total_doctors": total_doctors,
+                "total_diet_plans": total_diet_plans,
+                "total_exercises": total_exercises,
+                "monthly_growth": monthly_growth,
+                "top_doctor": top_doctor.username if top_doctor else None,
+                "most_popular_diet": most_popular_diet.title if most_popular_diet else None,
+            })
+
+        else:
+            return Response({"error": "Invalid role"}, status=403)
+
+        return Response(response_data)
