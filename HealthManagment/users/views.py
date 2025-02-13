@@ -1,7 +1,7 @@
 from rest_framework import generics, permissions
 from .models import Profile, Question,DietPlan,Exercise, CustomUser,Option,PatientResponse, LabReport,DoctorExerciseResponse,HealthStatus
 from .serializers import ExerciseSerializer, ProfileSerializer, DietPlanSerializer, DoctorRegistrationSerializer, QuestionSerializer,QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,PhoneNumberSerializer,LabReportSerializer
-from django.db.models import Count
+from django.db.models import Count,Avg
 from django.contrib.auth.models import Group
 from rest_framework import views, status
 from rest_framework.response import Response
@@ -196,32 +196,27 @@ class ProfileAPIView(APIView):
     def get(self, request):
         """
         Retrieve the profile of the logged-in user.
-        """
-        try:
-            profile = request.user
-            serializer = ProfileSerializer(profile)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except Profile.DoesNotExist:
-            return Response({"error": "Profile not found"}, status=status.HTTP_404_NOT_FOUND)
+        """ 
+        profile, created = Profile.objects.get_or_create(user=request.user)  # Auto-create if missing
+        serializer = ProfileSerializer(profile)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def put(self, request):
         """
         Update the profile of the logged-in user.
         """
-        try:
-            profile = request.user
-            serializer = ProfileSerializer(profile, data=request.data, partial=True)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data, status=status.HTTP_200_OK)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        except Profile.DoesNotExist:
-            return Response({"error": "Profile not found"}, status=status.HTTP_404_NOT_FOUND)
+        profile, _ = Profile.objects.get_or_create(user=request.user)  # Ensure a profile exists
+        serializer = ProfileSerializer(profile, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
 class UserListCreateView(generics.ListCreateAPIView):
     """Superadmins and Admins can list users"""
     queryset = CustomUser.objects.all()
     serializer_class = CustomUserDetailsSerializer
-    permission_classes = [IsSuperAdmin | IsAdmin]
+    permission_classes = [PermissionsManager]
     filter_backends = [DjangoFilterBackend]
     filterset_class = CustomUserFilter
     
@@ -441,7 +436,7 @@ class DashboardView(APIView):
             )
 
             total_exercises = Exercise.objects.filter(patient__in=CustomUser.objects.filter(role="patient")).count()
-            completed_exercises = Exercise.objects.filter(patient__in=CustomUser.objects.filter(role="patient"), completed=True).count()
+            completed_exercises = Exercise.objects.filter(patient__in=CustomUser.objects.filter(role="patient")).count()
 
             exercise_compliance = (
                 round((completed_exercises / total_exercises) * 100, 2) if total_exercises else 0
@@ -457,11 +452,11 @@ class DashboardView(APIView):
 
         elif role == "patient":
             total_diets = DietPlan.objects.filter(patient=user).count()
-            total_exercises = Exercise.objects.filter(patient=user).count()
+            total_exercises = Exercise.objects.filter(user=user).count()
             latest_health_status = HealthStatus.objects.filter(user=user).order_by("-created_at").first()
-            avg_calories_burned = Exercise.objects.filter(patient=user).aggregate(Avg("calories_burned"))["calories_burned__avg"] or 0
+            avg_calories_burned = Exercise.objects.filter(user=user).aggregate(Avg("calories_burned"))["calories_burned__avg"] or 0
 
-            completed_exercises = Exercise.objects.filter(patient=user, completed=True).count()
+            completed_exercises = Exercise.objects.filter(user=user).count()
             goal_achievement_rate = (
                 round((completed_exercises / total_exercises) * 100, 2) if total_exercises else 0
             )
