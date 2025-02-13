@@ -214,7 +214,7 @@ class Profile(AuditModel):
         super().save(*args, **kwargs)
     
     def __str__(self):
-        return f"{self.first_name} - {self.user.role}"
+        return f"{self.user.username}'s Profile"
 
 class DietPlan(AuditModel):
     patient = models.ForeignKey(CustomUser , on_delete=models.CASCADE, related_name="assigned_diets")
