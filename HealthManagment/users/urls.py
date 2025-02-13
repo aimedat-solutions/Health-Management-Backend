@@ -17,7 +17,7 @@ urlpatterns = [
     path('profile/', ProfileAPIView.as_view(), name='profile-api'),
     path('users', UserListCreateView.as_view(), name='user-list-create'),
     path('users/<int:pk>/', UserDetailView.as_view(), name='user-detail'),
-    # path('login/', CustomLoginView.as_view(), name='login'),
+    path('login/', CustomLoginView.as_view(), name='login'),
     # path('send-sms/', SendOrResendSMSAPIView.as_view(), name='send-sms'),
     # path('logout/', LogoutAPIView.as_view(), name='logout'),
     
