@@ -1,6 +1,6 @@
 from django.contrib import admin
 from .models import (
-    CustomUser, Profile, Exercise, DoctorExerciseResponse, Question, PatientDietSchedule,
+    CustomUser, Profile, Exercise, DoctorExerciseResponse, Question, PatientDietQuestion,
     Option, DietPlan, PatientResponse, LabReport, HealthStatus
 )
 
@@ -65,6 +65,6 @@ admin.site.register(Question, QuestionAdmin)
 admin.site.register(Option, OptionAdmin)
 admin.site.register(DietPlan, DietPlanAdmin)
 admin.site.register(PatientResponse, PatientResponseAdmin)
-admin.site.register(PatientDietSchedule)
+admin.site.register(PatientDietQuestion)
 admin.site.register(LabReport, LabReportAdmin)
 admin.site.register(HealthStatus, HealthStatusAdmin)

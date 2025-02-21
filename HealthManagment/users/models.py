@@ -256,7 +256,6 @@ class DietPlan(AuditModel):
         return f"{self.title} for {self.patient.first_name} on {self.date}"
     
     
-
 class PatientResponse(AuditModel):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='responses')
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='responses')
@@ -267,10 +266,19 @@ class PatientResponse(AuditModel):
     def __str__(self):
         return f"Answers by {self.user.username}for question {self.question.question_text[:30]}"
     
-class PatientDietSchedule(models.Model):
+class PatientDietQuestion(AuditModel):
     patient = models.OneToOneField(CustomUser, on_delete=models.CASCADE, limit_choices_to={'role': 'patient'})
+    date = models.DateField(default=timezone.now)  
+    breakfast = models.TextField()
+    lunch = models.TextField()
+    snack = models.TextField()
+    dinner = models.TextField()
+    
     last_diet_update = models.DateTimeField(default=timezone.now)
 
+    def __str__(self):
+        return f"Diet question for {self.patient.username} on {self.date}"
+    
     def is_due_for_update(self):
         return timezone.now() >= self.last_diet_update + timedelta(days=15)
     
@@ -279,9 +287,6 @@ class PatientDietSchedule(models.Model):
         if self.patient.role != 'patient':
             raise ValueError("Only users with the 'patient' role can have a diet schedule.")
         super().save(*args, **kwargs)
-        
-    def __str__(self):
-        return f"Diet Schedule for {self.patient.username}"
 
 class LabReport(AuditModel):
     patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="lab_reports")
