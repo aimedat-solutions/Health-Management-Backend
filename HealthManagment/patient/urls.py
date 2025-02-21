@@ -2,7 +2,6 @@ from django.urls import path, include
 from .views import (
     LabReportViewSet,
     ViewHealthStatusView,PatientResponseViewSet,InitialQuestionsView,DietQuestionsView,
-    PatientDietScheduleViewSet
 )
 from rest_framework.routers import DefaultRouter
 from users.views import DietPlanViewSet,ProfileAPIView,ExerciseListCreateView
@@ -12,7 +11,6 @@ app_name = 'patient'
 router.register(r'diet-plans', DietPlanViewSet, basename='diet-plans')
 router.register(r'answer-responses', PatientResponseViewSet, basename='patientresponse')
 router.register(r'lab-reports', LabReportViewSet, basename='labreport')
-router.register(r"diet-schedule", PatientDietScheduleViewSet, basename='diet-questions-schedule')
 
 urlpatterns = [
     path('', include(router.urls)),

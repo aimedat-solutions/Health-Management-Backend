@@ -1,8 +1,8 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from users.models import DietPlan, LabReport, Question,PatientResponse,CustomUser,PatientDietSchedule
-from .serializers import PatientResponseSerializer, LabReportSerializer, QuestionSerializer,PatientDietScheduleSerializer
+from users.models import DietPlan, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion
+from .serializers import PatientResponseSerializer, LabReportSerializer, QuestionSerializer,DietQuestionSerializer
 from users.permissions import PermissionsManager
 from rest_framework import viewsets, permissions,generics,status
 from rest_framework.decorators import action
@@ -157,33 +157,55 @@ class InitialQuestionsView(generics.ListAPIView):
 
 class DietQuestionsView(APIView):
     permission_classes = [PermissionsManager]
-    serializer_class = QuestionCreateSerializer
-    queryset = Question.objects.all()
+    serializer_class = DietQuestionSerializer
+    queryset = PatientDietQuestion.objects.all()
 
     def get(self, request):
+        """
+        Retrieve the latest diet details for the patient.
+        """
         user = request.user
-        schedule, created = PatientDietSchedule.objects.get_or_create(patient=user)
 
-        if not user.initial_question_completed:
-            return Response(
-                {"message": "Please complete the initial assessment to access diet questions."}, 
-                status=status.HTTP_200_OK
-            )
-        diet_questions = Question.objects.filter(category="diet")
-        return Response(QuestionCreateSerializer(diet_questions, many=True).data, status=status.HTTP_200_OK)
+        if user.role != "patient":
+            return Response({"message": "Only patients can access diet questions."}, status=status.HTTP_403_FORBIDDEN)
+
+        # Get the patient's diet record
+        patient_diet = PatientDietQuestion.objects.filter(patient=user).order_by('-last_diet_update').first()
+
+        if not patient_diet:
+            return Response({"message": "No diet records found. Please submit your diet details."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Check if the diet update is due (every 15 days)
+        if not patient_diet.is_due_for_update():
+            return Response({"message": "Diet update not yet due.", "diet_details": DietQuestionSerializer(patient_diet).data}, status=status.HTTP_200_OK)
+
+        return Response({"message": "Diet update required.", "diet_details": DietQuestionSerializer(patient_diet).data}, status=status.HTTP_200_OK)
     
-class PatientDietScheduleViewSet(viewsets.ModelViewSet):
-    queryset = PatientDietSchedule.objects.all()
-    serializer_class = PatientDietScheduleSerializer
-    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        """
+        Update the patient's diet details.
+        Expected Request:
+        {
+            "breakfast": "Oatmeal with fruits",
+            "lunch": "Grilled chicken with salad",
+            "snack": "Mixed nuts",
+            "dinner": "Steamed fish with vegetables"
+        }
+        """
+        user = request.user
 
-    def update(self, request, *args, **kwargs):
-        schedule = self.get_object()
+        if user.role != "patient":
+            return Response({"message": "Only patients can update diet questions."}, status=status.HTTP_403_FORBIDDEN)
 
-        # Update Diet Every 15 Days
-        if schedule.is_due_for_update():
-            schedule.last_diet_update = now()
-            schedule.save()
-            return Response({"message": "Diet updated!"}, status=status.HTTP_200_OK)
+        # Get or create a diet record for the patient
+        patient_diet, created = PatientDietQuestion.objects.get_or_create(patient=user)
 
-        return Response({"message": "Not due for update!"}, status=status.HTTP_400_BAD_REQUEST)
+        # Update diet details
+        patient_diet.breakfast = request.data.get("breakfast", patient_diet.breakfast)
+        patient_diet.lunch = request.data.get("lunch", patient_diet.lunch)
+        patient_diet.snack = request.data.get("snack", patient_diet.snack)
+        patient_diet.dinner = request.data.get("dinner", patient_diet.dinner)
+        patient_diet.last_diet_update = timezone.now()  # Update the timestamp
+        patient_diet.save()
+
+        return Response({"message": "Diet details updated successfully.", "diet_details": DietQuestionSerializer(patient_diet).data}, status=status.HTTP_200_OK)
