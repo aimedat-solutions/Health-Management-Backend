@@ -9,7 +9,8 @@ from django.utils.crypto import get_random_string
 from users.utils import send_otp
 from django.core.exceptions import ValidationError
 from .middleware import get_current_user
-
+from datetime import timedelta
+from django.utils.timezone import now
 
 class AuditModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
@@ -49,25 +50,36 @@ class CustomUser(AbstractUser, AuditModel):
         ('doctor', 'Doctor'),
         ('patient', 'Patient'),
     ]
-    
+
+    phone_number = PhoneNumberField(unique=True, blank=False, null=False)
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default="patient")
-    phone_number = PhoneNumberField(max_length=15, blank=True, null=True)
-    security_code = models.CharField(max_length=120, blank=True, null=True)
+    security_code = models.CharField(max_length=6, blank=True, null=True)  # Store OTP
     is_verified = models.BooleanField(default=False)
-    sent = models.DateTimeField(null=True)
+    sent = models.DateTimeField(null=True)  # OTP sent time
     is_first_login = models.BooleanField(default=True)
+    initial_question_completed = models.BooleanField(default=False)  
+    last_diet_question_answered = models.DateTimeField(null=True, blank=True)
+    
+    REQUIRED_FIELDS = ['role']
     
     def __str__(self):
         return f"{self.role} . {self.username}"
     
-    def save(self, *args, **kwargs):       
-        request = kwargs.pop('request', None)  # Extract the request user if passed
-        if request:
-            if request.user.role == "superadmin" and self.role not in ["admin", "superadmin"]:
-                raise ValidationError("SuperAdmin can only create Admin users.")
-            elif request.user.role == "admin" and self.role != "doctor":
-                raise ValidationError("Admin can only create Doctor users.")
-
+    def needs_diet_questions(self):
+        if self.last_diet_question_answered:
+            return now() > self.last_diet_question_answered + timedelta(days=15)
+        return True 
+    
+    def clean(self):
+        """ Ensure phone number is provided """
+        super().clean()
+        if not self.phone_number:
+            raise ValidationError("Phone number is required for all users.")
+        
+    def save(self, *args, **kwargs):
+        """ Ensure phone number is always present """
+        if not self.phone_number and not self.is_superuser:
+            raise ValidationError("Phone number cannot be empty.")
         super().save(*args, **kwargs)
         
     def generate_security_code(self):
@@ -158,19 +170,29 @@ class DoctorExerciseResponse(AuditModel):
 
 
 class Question(AuditModel):
+    QUESTION_CATEGORIES = [
+        ("initial", "Initial Question"),
+        ("diet", "Diet Question"),
+    ]
     QUESTION_TYPES = [
         ('radio', 'Radio'),
         ('checkbox', 'Checkbox'),
         ('description', 'Description'),
     ]
     question_text = models.CharField(max_length=255)
-    type = models.CharField(max_length=20, choices=QUESTION_TYPES)
+    category = models.CharField(max_length=10, choices=QUESTION_CATEGORIES)
+    type = models.CharField(max_length=20, choices=QUESTION_TYPES, null=True, blank=True)
     placeholder = models.CharField(max_length=255, null=True, blank=True)
     max_length = models.IntegerField(null=True, blank=True)
 
     def __str__(self):
-        return self.question_text
-
+        return f"{self.category.upper()} - {self.question_text[:50]}"
+    
+    def save(self, *args, **kwargs):
+        """Ensure only 'initial' questions have a type."""
+        if self.category == 'diet':
+            self.question_type = None  
+        super().save(*args, **kwargs)
 
 class Option(AuditModel):
     id = models.AutoField(primary_key=True) 
@@ -238,12 +260,28 @@ class DietPlan(AuditModel):
 class PatientResponse(AuditModel):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='responses')
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='responses')
+    selected_option = models.ForeignKey(Option, null=True, blank=True, on_delete=models.SET_NULL)
     response_text = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Answers by {self.user.username}for question {self.question.pk}"
+        return f"Answers by {self.user.username}for question {self.question.question_text[:30]}"
+    
+class PatientDietSchedule(models.Model):
+    patient = models.OneToOneField(CustomUser, on_delete=models.CASCADE, limit_choices_to={'role': 'patient'})
+    last_diet_update = models.DateTimeField(default=timezone.now)
 
+    def is_due_for_update(self):
+        return timezone.now() >= self.last_diet_update + timedelta(days=15)
+    
+    def save(self, *args, **kwargs):
+        # Ensure only "patient" users can be assigned
+        if self.patient.role != 'patient':
+            raise ValueError("Only users with the 'patient' role can have a diet schedule.")
+        super().save(*args, **kwargs)
+        
+    def __str__(self):
+        return f"Diet Schedule for {self.patient.username}"
 
 class LabReport(AuditModel):
     patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="lab_reports")

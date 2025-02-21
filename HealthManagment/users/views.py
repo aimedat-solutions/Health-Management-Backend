@@ -224,7 +224,7 @@ class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
     """Superadmins and Admins can manage users"""
     queryset = CustomUser.objects.all()
     serializer_class = CustomUserDetailsSerializer
-    permission_classes = [IsSuperAdmin | IsAdmin]
+    permission_classes = [IsSuperAdmin]
     
 class AdminCreateView(generics.CreateAPIView):
     """Only Superadmins can create Admin users"""
@@ -233,7 +233,12 @@ class AdminCreateView(generics.CreateAPIView):
     permission_classes = [IsSuperAdmin]
 
     def perform_create(self, serializer):
-        serializer.save(role='admin')
+        user = serializer.save(role="admin") 
+        default_password = "Admin"         
+        patient_group, created = Group.objects.get_or_create(name="patient")
+        user.groups.add(patient_group)  
+        user.set_password(default_password)
+        user.save()
 
 class DoctorListCreateView(generics.ListCreateAPIView):
     """Only Admins can create and list Doctors"""
@@ -476,11 +481,13 @@ class DashboardView(APIView):
             total_exercises = Exercise.objects.count()
             monthly_growth = CustomUser.objects.filter(date_joined__month=2).count()
 
-            top_doctor = (
+            top_doctors = (
                 CustomUser.objects.filter(role="doctor")
-                .annotate(patient_count=Count("created_diets"))
-                .order_by("-patient_count")
-                .first()
+                .annotate(
+                    diet_count=Count("created_diets"),
+                    exercise_count=Count("created_exercise_set")
+                )
+                .order_by("-diet_count", "-exercise_count")[:5]
             )
 
             most_popular_diet = (
@@ -495,7 +502,7 @@ class DashboardView(APIView):
                 "total_diet_plans": total_diet_plans,
                 "total_exercises": total_exercises,
                 "monthly_growth": monthly_growth,
-                "top_doctor": top_doctor.username if top_doctor else None,
+                "top_doctors": [doctor.username for doctor in top_doctors],
                 "most_popular_diet": most_popular_diet.title if most_popular_diet else None,
             })
 
