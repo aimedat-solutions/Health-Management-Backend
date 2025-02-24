@@ -1,10 +1,10 @@
 from django.urls import path, include
 from .views import (
     LabReportViewSet,
-    ViewHealthStatusView,PatientResponseViewSet
+    ViewHealthStatusView,PatientResponseViewSet,InitialQuestionsView,DietQuestionsView,
 )
 from rest_framework.routers import DefaultRouter
-from users.views import DietPlanViewSet,ProfileAPIView,CustomLoginView,SendOrResendSMSAPIView,LogoutAPIView,ExerciseListCreateView
+from users.views import DietPlanViewSet,ProfileAPIView,ExerciseListCreateView
 
 router = DefaultRouter()
 app_name = 'patient'
@@ -14,13 +14,11 @@ router.register(r'lab-reports', LabReportViewSet, basename='labreport')
 
 urlpatterns = [
     path('', include(router.urls)),
-    # path('login/', CustomLoginView.as_view(), name='login'),
-    # path('register/', SendOrResendSMSAPIView.as_view(), name='send-sms'),
-    # path('profile/', ProfileAPIView.as_view(), name='profile-api'),    
+    path("initial-questions/", InitialQuestionsView.as_view(), name="initial-questions"),
+    path("diet-questions/", DietQuestionsView.as_view(), name="diet-questions"),
     path('diet-plans/<int:patient_id>/<str:selected_date>/', DietPlanViewSet.as_view({'get': 'retrieve'}), name='diet-plan-retrieve-date'),
     path('view-health-status/', ViewHealthStatusView.as_view(), name='view-health-status'),
     path('exercises/', ExerciseListCreateView.as_view(), name='exercise-list-create'),
-    # path('logout/', LogoutAPIView.as_view(), name='logout'),
 ]
 
 

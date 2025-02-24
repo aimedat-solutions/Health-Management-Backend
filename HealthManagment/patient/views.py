@@ -1,16 +1,19 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from users.models import DietPlan, LabReport, Question,PatientResponse
-from .serializers import DietPlanSerializer, LabReportSerializer, QuestionSerializer
+from users.models import DietPlan, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion
+from .serializers import PatientResponseSerializer, LabReportSerializer, QuestionSerializer,DietQuestionSerializer
 from users.permissions import PermissionsManager
-from rest_framework import viewsets, permissions
+from rest_framework import viewsets, permissions,generics,status
 from rest_framework.decorators import action
-from .serializers import PatientResponseSerializer
+from users.serializers import QuestionCreateSerializer
 from django_filters.rest_framework import DjangoFilterBackend
 from users.filters import LabReportFilter
 from rest_framework.filters import OrderingFilter
 from rest_framework.viewsets import ModelViewSet
+from django.utils import timezone
+from django.utils.timezone import now
+from django.shortcuts import get_object_or_404
 
 class LabReportViewSet(viewsets.ModelViewSet):
     queryset = LabReport.objects.all()
@@ -75,461 +78,117 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
     codename = 'patientresponse'
 
     def get_queryset(self):
+        """Return all responses for the logged-in user."""
         user = self.request.user
-        if user.role == 'patient':
-            return PatientResponse.objects.filter(user=user)
-        elif user.role == 'doctor':
-            return PatientResponse.objects.all()  # Doctors can see all responses
-        return PatientResponse.objects.none()
-        
+        return PatientResponse.objects.filter(user=user)      
+    
+    def list(self, request, *args, **kwargs):
+        """Override list() to return messages when necessary."""
+        user = self.request.user
+        user_status = get_object_or_404(CustomUser, id=user.id)
+
+        if user_status.is_first_login:
+            if not PatientResponse.objects.filter(user=user, question__category="initial").exists():
+                return Response({"message": "Please answer the initial questions."}, status=status.HTTP_200_OK)
+
+        if not user_status.initial_question_completed:
+            return Response({"message": "Please complete the initial questions first."}, status=status.HTTP_200_OK)
+
+        return super().list(request, *args, **kwargs)
+    
     def perform_create(self, serializer):
         """
-        Automatically associate the logged-in user with the response.
+        - Save patient responses.
+        - Check if all initial questions are answered.
+        - Only then update `initial_question_completed` to `True`.
         """
-        serializer.save(user=self.request.user)
+        user = self.request.user
+        response = serializer.save(user=user)  
         
+        total_initial_questions = Question.objects.filter(category="initial").count()
 
+        answered_initial_questions = PatientResponse.objects.filter(
+            user=user, question__category="initial"
+        ).values_list("question", flat=True).distinct().count()
 
+        if answered_initial_questions >= total_initial_questions:
+            user.initial_question_completed = True
+            user.is_first_login = False  
+            user.save()
 
+        return Response({"message": "Response saved!"}, status=status.HTTP_201_CREATED)
 
+class InitialQuestionsView(generics.ListAPIView):
+    serializer_class = QuestionSerializer
+    permission_classes =[PermissionsManager]
 
+    def get_queryset(self):
+        user = self.request.user
+        user_status, created = CustomUser.objects.get_or_create(id=user.id)
 
+        if user_status.is_first_login:
+            if not user_status.initial_question_completed:
+                return Question.objects.filter(category="initial")
+            return Question.objects.filter(category="initial")  # Don't show again if already answered
 
+        # If initial questions are not answered → Show empty
+        if not user_status.initial_question_completed:
+            return Question.objects.filter(category="initial")
 
+        # If initial questions answered → Show diet questions
+        return Question.objects.filter(category="diet")
 
+class DietQuestionsView(APIView):
+    permission_classes = [PermissionsManager]
+    serializer_class = DietQuestionSerializer
+    queryset = PatientDietQuestion.objects.all()
 
+    def get(self, request):
+        """
+        Retrieve the latest diet details for the patient.
+        """
+        user = request.user
 
+        if user.role != "patient":
+            return Response({"message": "Only patients can access diet questions."}, status=status.HTTP_403_FORBIDDEN)
 
+        # Get the patient's diet record
+        patient_diet = PatientDietQuestion.objects.filter(patient=user).order_by('-last_diet_update').first()
 
+        if not patient_diet:
+            return Response({"message": "No diet records found. Please submit your diet details."}, status=status.HTTP_404_NOT_FOUND)
 
+        # Check if the diet update is due (every 15 days)
+        if not patient_diet.is_due_for_update():
+            return Response({"message": "Diet update not yet due.", "diet_details": DietQuestionSerializer(patient_diet).data}, status=status.HTTP_200_OK)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# from rest_framework import generics, permissions
-# from users.models import Profile,  Question,DietPlan,Exercise, CustomUser,Option,PatientResponse, LabReport
-# from .serializers import PatientSerializer,ExerciseSerializer, DietPlanSerializer, QuestionSerializer,QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,PhoneNumberSerializer,LabReportSerializer
-
-# from django.contrib.auth.models import Group
-# from rest_framework import views, status
-# from rest_framework.response import Response
-# from rest_framework.generics import GenericAPIView
-# from rest_framework.permissions import AllowAny
-# from rest_framework.authtoken.models import Token
-# from dj_rest_auth.views import LoginView
-# from datetime import date
-# from rest_framework_simplejwt.tokens import RefreshToken
-# from rest_framework.authentication import authenticate
-# from users.decryption import decrypt_password
-# from rest_framework.views import APIView
-# from django.conf import settings
-# from django.contrib.auth import logout as django_logout
-# from django.core.exceptions import ObjectDoesNotExist
-# from drf_spectacular.utils import extend_schema
-# from users.permissions import PermissionsManager
-# from rest_framework import viewsets
-# from rest_framework import serializers
-# from rest_framework import generics
-# from rest_framework.permissions import IsAuthenticated
-# from rest_framework.exceptions import NotAuthenticated
-# from users.utils import send_otp, verify_otp
-# from users.pagination import ProductPagination
-# class UserRegistrationAPIView(APIView):
-#     serializer_class = UserRegistrationSerializer
-#     def post(self, request):
-#         ## INECRIPTION ##
-#         encrypted_phone_number = request.data.get('phone_number')
-#         decrypted_phone_number = decrypt_password(encrypted_phone_number)
-        
-#         ## DECRIPTION ##
-#         decrypted_data = {
-#             'phone_number': decrypted_phone_number,
-#         }
-        
-#         serializer = UserRegistrationSerializer(data=decrypted_data)
-#         if serializer.is_valid():
-#             user = serializer.save()
-#             refresh = RefreshToken.for_user(user)
-#             access_token = str(refresh.access_token)
-#             refresh_token = str(refresh)
-#             response_data = serializer.data
-#             response_data['access_token'] = access_token
-#             response_data['refresh_token'] = refresh_token
-#             return Response(response_data, status=status.HTTP_201_CREATED)
-#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-# class CustomLoginView(LoginView):
-#     permission_classes = [AllowAny]
-#     authentication_classes = []
-#     serializer_class = UserLoginSerializer
+        return Response({"message": "Diet update required.", "diet_details": DietQuestionSerializer(patient_diet).data}, status=status.HTTP_200_OK)
     
-#     def post(self, request, *args, **kwargs):
-#         # decrypted_data = {}
-#         # for field, value in request.data.items():
-#         #     decrypted_data[field] = decrypt_password(value)
-#         serializer = self.get_serializer(data=request.data)
-#         serializer.is_valid(raise_exception=True)
-#         user = serializer.validated_data['user']
-#         is_new_user = user.is_first_login
-#         if is_new_user:
-#             # Mark the user's first login as completed
-#             user.is_first_login = False
-#             user.save()
-#         refresh = RefreshToken.for_user(user)
-#         access_token = str(refresh.access_token)
-#         refresh_token = str(refresh)
-#         response_data = {
-#             'access_token': access_token,
-#             'refresh_token': refresh_token,
-#             'is_new_user': is_new_user,
-#         }
-#         response_data.update(CustomUserDetailsSerializer(user).data)
-#         return Response(response_data, status=status.HTTP_200_OK)
-    
-# @extend_schema(methods=['GET'], exclude=True)
-# class LogoutAPIView(APIView):
-#     permission_classes = (AllowAny,)
-#     throttle_scope = 'dj_rest_auth'
+    def post(self, request):
+        """
+        Update the patient's diet details.
+        Expected Request:
+        {
+            "breakfast": "Oatmeal with fruits",
+            "lunch": "Grilled chicken with salad",
+            "snack": "Mixed nuts",
+            "dinner": "Steamed fish with vegetables"
+        }
+        """
+        user = request.user
 
-#     def get(self, request, *args, **kwargs):
-#         if getattr(settings, 'ACCOUNT_LOGOUT_ON_GET', False):
-#             response = self.logout(request)
-#         else:
-#             response = self.http_method_not_allowed(request, *args, **kwargs)
+        if user.role != "patient":
+            return Response({"message": "Only patients can update diet questions."}, status=status.HTTP_403_FORBIDDEN)
 
-#         return self.finalize_response(request, response, *args, **kwargs)
+        # Get or create a diet record for the patient
+        patient_diet, created = PatientDietQuestion.objects.get_or_create(patient=user)
 
-#     def post(self, request, *args, **kwargs):
-#         return self.logout(request)
+        # Update diet details
+        patient_diet.breakfast = request.data.get("breakfast", patient_diet.breakfast)
+        patient_diet.lunch = request.data.get("lunch", patient_diet.lunch)
+        patient_diet.snack = request.data.get("snack", patient_diet.snack)
+        patient_diet.dinner = request.data.get("dinner", patient_diet.dinner)
+        patient_diet.last_diet_update = timezone.now()  # Update the timestamp
+        patient_diet.save()
 
-#     def logout(self, request):
-#         try:
-#             request.user.auth_token.delete()
-#         except (AttributeError, ObjectDoesNotExist):
-#             pass
-
-#         if getattr(settings, 'REST_SESSION_LOGIN', True):
-#             django_logout(request)
-
-#         response = Response(
-#             {'detail': ('Successfully logged out.')},
-#             status=status.HTTP_200_OK,
-#         )
-
-#         if getattr(settings, 'REST_USE_JWT', False):
-#             from rest_framework_simplejwt.exceptions import TokenError
-#             from rest_framework_simplejwt.tokens import RefreshToken
-
-#             from .jwt_auth import unset_jwt_cookies
-#             cookie_name = getattr(settings, 'JWT_AUTH_COOKIE', None)
-
-#             unset_jwt_cookies(response)
-
-#             if 'rest_framework_simplejwt.token_blacklist' in settings.INSTALLED_APPS:
-#                 try:
-#                     token = RefreshToken(request.data['refresh'])
-#                     token.blacklist()
-#                 except KeyError:
-#                     response.data = {'detail': _(
-#                         'Refresh token was not included in request data.')}
-#                     response.status_code = status.HTTP_401_UNAUTHORIZED
-#                 except (TokenError, AttributeError, TypeError) as error:
-#                     if hasattr(error, 'args'):
-#                         if 'Token is blacklisted' in error.args or 'Token is invalid or expired' in error.args:
-#                             response.data = {'detail': _(error.args[0])}
-#                             response.status_code = status.HTTP_401_UNAUTHORIZED
-#                         else:
-#                             response.data = {'detail': _(
-#                                 'An error has occurred.')}
-#                             response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-#                     else:
-#                         response.data = {'detail': _('An error has occurred.')}
-#                         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-#             elif not cookie_name:
-#                 message = _(
-#                     'Neither cookies or blacklist are enabled, so the token '
-#                     'has not been deleted server side. Please make sure the token is deleted client side.',
-#                 )
-#                 response.data = {'detail': message}
-#                 response.status_code = status.HTTP_200_OK
-#         return response
-
-# class SendOrResendSMSAPIView(GenericAPIView):
-#     serializer_class = PhoneNumberSerializer
-    
-#     """
-#     API endpoint to send OTP to the user's phone number.
-#     """
-#     def post(self, request):
-#         phone_number = request.data.get("phone_number", None)
-
-#         if phone_number:
-#             try:
-#                 # Check if the user already exists (for login flow)
-#                 user = CustomUser.objects.get(phone_number=phone_number)
-#                 send_otp(phone_number)  # Send OTP
-#                 user.save()
-#                 return Response({"message": "OTP sent for login.", "is_new_user": False}, status=status.HTTP_200_OK)
-
-#             except CustomUser.DoesNotExist:
-#                 # If the user does not exist (for registration flow)
-#                 user = CustomUser(phone_number=phone_number, role='patient', username=phone_number, is_first_login=True, password=CustomUser.objects.make_random_password(),)
-#                 user.save()
-#                 group = Group.objects.get(name=user.role)
-#                 user.groups.add(group)
-#                 send_otp(phone_number)   # Send OTP
-                
-#                 return Response({"message": "OTP sent for registration.", "is_new_user": True}, status=status.HTTP_200_OK)
-#         else:
-#             return Response({"error": "Phone number is required"}, status=status.HTTP_400_BAD_REQUEST)
-        
-# class UserListView(generics.ListAPIView):
-#     queryset = CustomUser.objects.all()
-#     serializer_class = CustomUserDetailsSerializer
-    
-# class UserEditView(generics.RetrieveUpdateDestroyAPIView):
-#     queryset = CustomUser.objects.all()
-#     serializer_class = CustomUserDetailsSerializer
-#     permission_classes = [PermissionsManager]
-#     codename = 'doctor'
-# class PatientListCreateView(generics.ListCreateAPIView):
-#     queryset = Profile.objects.all()
-#     serializer_class = PatientSerializer
-#     permission_classes = [PermissionsManager]
-#     codename = 'profile'
-
-# class PatientDetailView(generics.RetrieveUpdateDestroyAPIView):
-#     queryset = Profile.objects.all()
-#     serializer_class = PatientSerializer
-#     permission_classes = [PermissionsManager]
-#     codename = 'profile'
-            
-# class DietPlanViewSet(viewsets.ModelViewSet):
-#     queryset = DietPlan.objects.all()
-#     serializer_class = DietPlanSerializer
-#     permission_classes = [PermissionsManager]
-#     codename = 'dietplan'
-
-#     def perform_create(self, serializer):
-#         patient_id = self.request.data.get('patient_id')
-#         try:
-#             patient = Profile.objects.get(id=patient_id)
-#         except Profile.DoesNotExist:
-#             raise serializers.ValidationError("Patient does not exist.")
-#         serializer.save(patient=patient)
-    
-#     def retrieve(self, request, patient_id, selected_date):
-#         try:
-#             # Convert selected_date to a date object
-#             selected_date = date.fromisoformat(selected_date)
-#             # Retrieve the diet plan for the specific date
-#             diet_plan = DietPlan.objects.filter(patient_id=patient_id, date=selected_date)
-
-#             if not diet_plan.exists():
-#                 return Response({"error": "Diet plan not found for the selected date."}, status=status.HTTP_404_NOT_FOUND)
-
-#             serializer = DietPlanSerializer(diet_plan, many=True)
-#             return Response(serializer.data, status=status.HTTP_200_OK)
-#         except ValueError:
-#             return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
-#         except Exception as e:
-#             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        
-#     # def get_queryset(self):
-#     #     user = self.request.user
-#     #     if hasattr(user, 'doctor' and 'admin'):
-#     #         return DietPlan.objects.filter(patient__doctor=user.doctor)
-#     #     return DietPlan.objects.none()
-
-# class QuestionListCreateView(generics.ListCreateAPIView):
-#     queryset = Question.objects.all()
-#     pagination_class = ProductPagination
-#     permission_classes = [PermissionsManager]
-#     codename = 'doctor'
-
-#     def get_serializer_class(self):
-#         if self.request.method == 'POST':
-#             return QuestionCreateSerializer
-#         return QuestionSerializer
-
-#     def perform_create(self, serializer):
-#         serializer.save()
-# class QuestionDetailView(generics.RetrieveUpdateDestroyAPIView):
-#     queryset = Question.objects.all()
-#     serializer_class = QuestionCreateSerializer
-#     lookup_field = 'id'
-#     permission_classes = [PermissionsManager]
-#     codename = 'doctor'
-
-#     def get_serializer_class(self):
-#         if self.request.method in ['PUT', 'PATCH']:
-#             return QuestionCreateSerializer
-#         return QuestionSerializer
-
-#     def perform_update(self, serializer):
-#         serializer.save()
-    
-# class ExerciseListCreateView(generics.ListCreateAPIView):
-#     serializer_class = ExerciseSerializer
-#     # permission_classes = [IsAuthenticated]
-#     permission_classes = [PermissionsManager]
-#     codename = 'exercise'
-
-#     def get_queryset(self):
-#         # Return only exercises for the authenticated user
-#         return Exercise.objects.filter(user=self.request.user)
-
-#     def perform_create(self, serializer):
-#         # Link the exercise to the authenticated user
-#         serializer.save(user=self.request.user)
-        
-#     def permission_denied(self, request, message=None, code=None):
-#         if not request.user or not request.user.is_authenticated:
-#             raise NotAuthenticated(detail="Custom message: You are not authenticated. Please log in.")
-
-# class ExerciseDetailView(generics.RetrieveUpdateDestroyAPIView):
-#     serializer_class = ExerciseSerializer
-#     permission_classes = [IsAuthenticated]
-
-#     def get_queryset(self):
-#         # Ensure users can only access their own exercises
-#         return Exercise.objects.filter(user=self.request.user) 
-    
-
-# class QuestionAnswerListCreateView(APIView):
-#     serializer_class = QuestionAnswerSerializer
-#     permission_classes = [IsAuthenticated]
-   
-#     def get(self, request):
-#         """
-#         Get all answers by the logged-in user.
-#         """
-#         answers = PatientResponse.objects.filter(user=request.user)
-#         serializer = QuestionAnswerSerializer(answers, many=True)
-#         return Response(serializer.data, status=status.HTTP_200_OK)
-
-#     def post(self, request):
-#         """
-#         Submit answers for specific questions.
-#         """
-#         data = request.data
-#         data["user"] = request.user.id  # Attach the logged-in user
-
-#         serializer = QuestionAnswerSerializer(data=data)
-#         if serializer.is_valid():
-#             serializer.save()
-#             return Response(serializer.data, status=status.HTTP_201_CREATED)
-#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-# # LabReport ViewSet
-# class LabReportViewSet(viewsets.ModelViewSet):
-#     queryset = LabReport.objects.all()
-#     serializer_class = LabReportSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get_queryset(self):
-#         user = self.request.user
-#         # Ensure user is authenticated
-#         if user.is_authenticated:
-#             if user.groups.filter(name='doctor').exists():  # Check if the user has the 'doctor' role
-#                 return LabReport.objects.all()
-#             return LabReport.objects.filter(patient=user)
-#         return LabReport.objects.none()  # If the user is not authenticated, return no reports
-
-#     def create(self, request, *args, **kwargs):
-#         serializer = self.get_serializer(data=request.data)
-#         serializer.is_valid(raise_exception=True)
-#         self.perform_create(serializer)
-#         return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-#     def retrieve(self, request, *args, **kwargs):
-#         instance = self.get_object()
-#         serializer = self.get_serializer(instance)
-#         return Response(serializer.data)
-
-#     def update(self, request, *args, **kwargs):
-#         partial = kwargs.pop('partial', False)
-#         instance = self.get_object()
-#         serializer = self.get_serializer(instance, data=request.data, partial=partial)
-#         serializer.is_valid(raise_exception=True)
-#         self.perform_update(serializer)
-#         return Response(serializer.data)
-
-#     def destroy(self, request, *args, **kwargs):
-#         instance = self.get_object()
-#         self.perform_destroy(instance)
-#         return Response(status=status.HTTP_204_NO_CONTENT)
-
-# class DashboardView(APIView):
-#     permission_classes = [IsAuthenticated]
-
-#     def get(self, request):
-#         # Retrieve data for the logged-in patient (user)
-#         patient = request.user
-
-#         # Get data related to the patient
-#         total_diets = DietPlan.objects.filter(patient=patient).count()
-#         total_exercises = Exercise.objects.filter(user=patient).count()
-#         total_lab_reports = LabReport.objects.filter(patient=patient).count()
-
-#         # Return the summary data as a response
-#         dashboard_data = {
-#             "total_diets": total_diets,
-#             "total_exercises": total_exercises,
-#             "total_lab_reports": total_lab_reports,
-#         }
-#         return Response(dashboard_data)
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-# from django.shortcuts import render
-# from django.contrib.auth.decorators import login_required
-# from django.shortcuts import redirect
-
-# @login_required
-# def doctor_dashboard(request):
-#     return render(request, 'templates/dashboard.html')
-
-# @login_required
-# def patient_dashboard(request):
-#     return render(request, 'templates/patientdashboard.html')
-
-# @login_required
-# def admin_dashboard(request):
-#     return render(request, 'templates/admindashboard.html')
-
-# def role_based_redirect(request):
-#     if request.user.role == 'doctor':
-#         return redirect('users:doctor-dashboard')
-#     elif request.user.role == 'patient':
-#         return redirect('users:patient-dashboard')
-#     elif request.user.is_superuser:
-#         return redirect('users:admin-dashboard')
-#     return redirect('users:login')
+        return Response({"message": "Diet details updated successfully.", "diet_details": DietQuestionSerializer(patient_diet).data}, status=status.HTTP_200_OK)
