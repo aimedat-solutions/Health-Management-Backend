@@ -229,7 +229,7 @@ class OptionCreateSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False) 
     class Meta:
         model = Option
-        fields = ['id', 'value']
+        fields = '__all__'
 
 # Serializer for creating questions with options
 class QuestionCreateSerializer(serializers.ModelSerializer):
@@ -237,7 +237,7 @@ class QuestionCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Question
-        fields = ['type', 'question_text', 'placeholder', 'max_length', 'options']
+        fields = ['id', 'question_text', 'category', 'type', 'placeholder', 'max_length', 'options']
         extra_kwargs = {
             'placeholder': {'required': False},  # Make placeholder optional
             'max_length': {'required': False},   # Make max_length optional
