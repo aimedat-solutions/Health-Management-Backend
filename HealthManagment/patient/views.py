@@ -78,25 +78,9 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
     codename = 'patientresponse'
 
     def get_queryset(self):
-        """
-        Logic for showing questions with messages:
-        - If `is_first_login=True` → Show initial questions.
-        - If `is_first_login=False` and initial questions are NOT answered → Return a message.
-        - If `initial_question_completed=True` → Show diet questions.
-        """
+        """Return all responses for the logged-in user."""
         user = self.request.user
-        user_status, created = CustomUser.objects.get_or_create(id=user.id)
-
-        if user_status.is_first_login:
-            questions = Question.objects.filter(category="initial")
-            if questions.exists():
-                return questions
-            return Response({"message": "Please answer the initial questions."}, status=status.HTTP_200_OK)
-
-        if not user_status.initial_question_completed:
-            return Response({"message": "Please complete the initial questions first."}, status=status.HTTP_200_OK)
-
-        return Question.objects.filter(category="diet")     
+        return PatientResponse.objects.filter(user=user)      
     
     def list(self, request, *args, **kwargs):
         """Override list() to return messages when necessary."""
@@ -104,7 +88,7 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
         user_status = get_object_or_404(CustomUser, id=user.id)
 
         if user_status.is_first_login:
-            if not Question.objects.filter(category="initial").exists():
+            if not PatientResponse.objects.filter(user=user, question__category="initial").exists():
                 return Response({"message": "Please answer the initial questions."}, status=status.HTTP_200_OK)
 
         if not user_status.initial_question_completed:
@@ -115,25 +99,24 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         """
         - Save patient responses.
-        - Track question completions.
-        - Update flags for `first_time_user` and `initial_question_completed`.
+        - Check if all initial questions are answered.
+        - Only then update `initial_question_completed` to `True`.
         """
         user = self.request.user
-        response = serializer.save(user=user)
-        question = response.question  
+        response = serializer.save(user=user)  
+        
+        total_initial_questions = Question.objects.filter(category="initial").count()
 
-        if question.category == "initial":
+        answered_initial_questions = PatientResponse.objects.filter(
+            user=user, question__category="initial"
+        ).values_list("question", flat=True).distinct().count()
+
+        if answered_initial_questions >= total_initial_questions:
             user.initial_question_completed = True
-            user.is_first_login = False  # No longer a first-time user
-            user.save()
-
-        elif question.category == "diet":
-            # Track last diet question answered
-            user.last_diet_question_answered = now()
+            user.is_first_login = False  
             user.save()
 
         return Response({"message": "Response saved!"}, status=status.HTTP_201_CREATED)
-        
 
 class InitialQuestionsView(generics.ListAPIView):
     serializer_class = QuestionSerializer

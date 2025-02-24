@@ -58,17 +58,16 @@ class CustomLoginView(LoginView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
-        is_new_user = user.is_first_login
-        if is_new_user:
+        if user.initial_question_completed and user.is_first_login:
             user.is_first_login = False
-            user.save()
+            user.save(update_fields=["is_first_login"])
         refresh = RefreshToken.for_user(user)
         access_token = str(refresh.access_token)
         refresh_token = str(refresh)
         response_data = {
             'access_token': access_token,
             'refresh_token': refresh_token,
-            'is_new_user': is_new_user,   
+            'is_new_user': user.is_first_login,   
         }
         response_data.update(CustomUserDetailsSerializer(user).data)
         return Response(response_data, status=status.HTTP_200_OK)

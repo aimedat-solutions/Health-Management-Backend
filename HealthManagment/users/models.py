@@ -257,10 +257,10 @@ class DietPlan(AuditModel):
     
     
 class PatientResponse(AuditModel):
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='responses')
-    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='responses')
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='answer_responses')
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='question_responses')
     selected_option = models.ForeignKey(Option, null=True, blank=True, on_delete=models.SET_NULL)
-    response_text = models.TextField()
+    response_text = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
