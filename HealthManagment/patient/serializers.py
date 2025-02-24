@@ -18,7 +18,24 @@ class QuestionSerializer(serializers.ModelSerializer):
 class PatientResponseSerializer(serializers.ModelSerializer):
     class Meta:
         model = PatientResponse
-        fields = '__all__'        
+        fields = '__all__'   
+        
+class BulkPatientResponseSerializer(serializers.Serializer):
+    questions = serializers.ListField(
+        child=serializers.IntegerField(), required=True
+    )
+
+    def validate(self, data):
+        """Ensure all question IDs exist before processing"""
+        question_ids = data.get("questions", [])
+        existing_questions = set(Question.objects.filter(id__in=question_ids).values_list("id", flat=True))
+
+        # Check for invalid question IDs
+        invalid_questions = set(question_ids) - existing_questions
+        if invalid_questions:
+            raise serializers.ValidationError(f"Invalid question IDs: {list(invalid_questions)}")
+
+        return data      
 class DietQuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = PatientDietQuestion
