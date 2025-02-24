@@ -1,8 +1,8 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from users.models import DietPlan, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion
-from .serializers import PatientResponseSerializer, LabReportSerializer, QuestionSerializer,DietQuestionSerializer
+from users.models import DietPlan, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, Option
+from .serializers import PatientResponseSerializer, LabReportSerializer, QuestionSerializer,DietQuestionSerializer,BulkPatientResponseSerializer
 from users.permissions import PermissionsManager
 from rest_framework import viewsets, permissions,generics,status
 from rest_framework.decorators import action
@@ -96,17 +96,73 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
 
         return super().list(request, *args, **kwargs)
     
-    def perform_create(self, serializer):
+    def create(self, request, *args, **kwargs):
         """
-        - Save patient responses.
-        - Check if all initial questions are answered.
-        - Only then update `initial_question_completed` to `True`.
+        - Accepts multiple question-answer pairs.
+        - Saves all responses.
+        - Checks if all initial questions are answered before updating user status.
+        - Example request for POST
+        {
+            "questions": ["1", "2", "3"],
+            "1": "5-7 hours",
+            "2": "First trimester (weeks 1-13)",
+            "3": "Ft"
+        }
+
         """
         user = self.request.user
-        response = serializer.save(user=user)  
+        data = request.data
+        serializer = BulkPatientResponseSerializer(data=data)
+        serializer.is_valid(raise_exception=True)
         
-        total_initial_questions = Question.objects.filter(category="initial").count()
+        question_ids = serializer.validated_data["questions"]
+        responses_to_create = []
+        for q_id in question_ids:
+            try:
+                question = Question.objects.get(id=q_id)
+                response_value = data.get(str(q_id))  # Get the answer for the question
 
+                # Handle multiple-choice answers
+                if isinstance(response_value, list):
+                    for option_value in response_value:
+                        selected_option = Option.objects.filter(question=question, value=option_value).first()
+                        if selected_option:
+                            responses_to_create.append(
+                                PatientResponse(
+                                    user=user,
+                                    question=question,
+                                    selected_option=selected_option,
+                                    response_text=None
+                                )
+                            )
+                        else:
+                            responses_to_create.append(
+                                PatientResponse(
+                                    user=user,
+                                    question=question,
+                                    selected_option=None,
+                                    response_text=option_value
+                                )
+                            )
+                else:
+                    selected_option = Option.objects.filter(question=question, value=response_value).first()
+                    responses_to_create.append(
+                        PatientResponse(
+                            user=user,
+                            question=question,
+                            selected_option=selected_option,
+                            response_text=None if selected_option else response_value
+                        )
+                    )
+
+            except Question.DoesNotExist:
+                return Response({"error": f"Question ID {q_id} not found."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Bulk create responses
+        PatientResponse.objects.bulk_create(responses_to_create)
+
+        # Check if all initial questions are answered
+        total_initial_questions = Question.objects.filter(category="initial").count()
         answered_initial_questions = PatientResponse.objects.filter(
             user=user, question__category="initial"
         ).values_list("question", flat=True).distinct().count()
@@ -116,11 +172,11 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
             user.is_first_login = False  
             user.save()
 
-        return Response({"message": "Response saved!"}, status=status.HTTP_201_CREATED)
-
+        return Response({"message": "Responses saved successfully!"}, status=status.HTTP_201_CREATED)
 class InitialQuestionsView(generics.ListAPIView):
     serializer_class = QuestionSerializer
     permission_classes =[PermissionsManager]
+    codename = 'initialquestion'
 
     def get_queryset(self):
         user = self.request.user
@@ -142,6 +198,7 @@ class DietQuestionsView(APIView):
     permission_classes = [PermissionsManager]
     serializer_class = DietQuestionSerializer
     queryset = PatientDietQuestion.objects.all()
+    codename = 'patientdietquestion'
 
     def get(self, request):
         """
@@ -166,19 +223,21 @@ class DietQuestionsView(APIView):
     
     def post(self, request):
         """
-        Update the patient's diet details.
+        POST the patient's diet details.
         Expected Request:
         {
             "breakfast": "Oatmeal with fruits",
-            "lunch": "Grilled chicken with salad",
-            "snack": "Mixed nuts",
-            "dinner": "Steamed fish with vegetables"
+            "lunch": "Grilled chicken with salad",      
+            "dinner": "Steamed fish with vegetables",
+            eveningSnack": "Mixed nuts", 
+            "mms": "3", 
+            "preBreakfast": "1"
         }
         """
         user = request.user
 
-        if user.role != "patient":
-            return Response({"message": "Only patients can update diet questions."}, status=status.HTTP_403_FORBIDDEN)
+        if user.initial_question_completed and user.role != "patient":
+            return Response({"message": "Only patients can add diet detials."}, status=status.HTTP_403_FORBIDDEN)
 
         # Get or create a diet record for the patient
         patient_diet, created = PatientDietQuestion.objects.get_or_create(patient=user)
@@ -186,8 +245,10 @@ class DietQuestionsView(APIView):
         # Update diet details
         patient_diet.breakfast = request.data.get("breakfast", patient_diet.breakfast)
         patient_diet.lunch = request.data.get("lunch", patient_diet.lunch)
-        patient_diet.snack = request.data.get("snack", patient_diet.snack)
+        patient_diet.eveningSnack = request.data.get("eveningSnack", patient_diet.eveningSnack)
         patient_diet.dinner = request.data.get("dinner", patient_diet.dinner)
+        patient_diet.mms = request.data.get("mms", patient_diet.mms)
+        patient_diet.preBreakfast = request.data.get("preBreakfast", patient_diet.preBreakfast)
         patient_diet.last_diet_update = timezone.now()  # Update the timestamp
         patient_diet.save()
 

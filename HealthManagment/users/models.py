@@ -172,7 +172,7 @@ class DoctorExerciseResponse(AuditModel):
 class Question(AuditModel):
     QUESTION_CATEGORIES = [
         ("initial", "Initial Question"),
-        ("diet", "Diet Question"),
+        ("other", "Others"),
     ]
     QUESTION_TYPES = [
         ('radio', 'Radio'),
@@ -268,11 +268,13 @@ class PatientResponse(AuditModel):
     
 class PatientDietQuestion(AuditModel):
     patient = models.OneToOneField(CustomUser, on_delete=models.CASCADE, limit_choices_to={'role': 'patient'})
-    date = models.DateField(default=timezone.now)  
+    date = models.DateField(default=timezone.now, null=True)  
     breakfast = models.TextField()
     lunch = models.TextField()
-    snack = models.TextField()
+    eveningSnack = models.TextField()
     dinner = models.TextField()
+    mms = models.TextField()
+    preBreakfast = models.TextField()
     
     last_diet_update = models.DateTimeField(default=timezone.now)
 
