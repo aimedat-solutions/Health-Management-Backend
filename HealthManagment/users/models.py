@@ -9,12 +9,12 @@ from django.utils.crypto import get_random_string
 from users.utils import send_otp
 from django.core.exceptions import ValidationError
 from .middleware import get_current_user
-from datetime import timedelta
+from datetime import timedelta, date
 from django.utils.timezone import now
 
 class AuditModel(models.Model):
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -34,25 +34,22 @@ class AuditModel(models.Model):
         abstract = True
 
     def save(self, *args, **kwargs):
-        from .middleware import get_current_user
-
         user = get_current_user()
         if not self.pk and not self.created_by:
             self.created_by = user
         self.updated_by = user
         super().save(*args, **kwargs)
-
+        
+        
+class RoleChoices(models.TextChoices):
+    SUPERADMIN = "superadmin", "SuperAdmin"
+    ADMIN = "admin", "Admin"
+    DOCTOR = "doctor", "Doctor"
+    PATIENT = "patient", "Patient"
 
 class CustomUser(AbstractUser, AuditModel):
-    ROLE_CHOICES = [
-        ('superadmin', 'SuperAdmin'),
-        ('admin', 'Admin'),
-        ('doctor', 'Doctor'),
-        ('patient', 'Patient'),
-    ]
-
     phone_number = PhoneNumberField(unique=True, blank=False, null=False)
-    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default="patient")
+    role = models.CharField(max_length=10, choices=RoleChoices.choices, default=RoleChoices.PATIENT)
     security_code = models.CharField(max_length=6, blank=True, null=True)  # Store OTP
     is_verified = models.BooleanField(default=False)
     sent = models.DateTimeField(null=True)  # OTP sent time
@@ -209,15 +206,14 @@ class Option(AuditModel):
 ######################################################################### PATIENT Model #########################################################################################################
 
 class Profile(AuditModel):
-    GENDER_CHOICES = [
-        ('male', 'Male'),
-        ('female', 'Female'),
-    ]
+    class GenderChoices(models.TextChoices):
+        MALE = 'male', 'Male'
+        FEMALE = 'female', 'Female'
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='profile')
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
     date_of_birth = models.DateField(null=True, blank=True)
-    gender = models.CharField(max_length=10,choices=GENDER_CHOICES,default="female")
+    gender = models.CharField(max_length=10,choices=GenderChoices.choices,default=GenderChoices.FEMALE)
     address = models.TextField(null=True, blank=True, help_text="Only for patients")  
     specialization = models.CharField(max_length=255, null=True, blank=True, help_text="Only for doctors")  
     profile_image = models.ImageField(upload_to='profile_images/', null=True, blank=True)
@@ -228,14 +224,14 @@ class Profile(AuditModel):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
-    def save(self, *args, **kwargs):
-        # Auto-calculate age based on date_of_birth
+    @property
+    def age(self):
         if self.date_of_birth:
-            today = datetime.date.today()
-            self.age = today.year - self.date_of_birth.year - (
+            today = date.today()
+            return today.year - self.date_of_birth.year - (
                 (today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day)
             )
-        super().save(*args, **kwargs)
+        return None
     
     def __str__(self):
         return f"{self.user.username}'s Profile"

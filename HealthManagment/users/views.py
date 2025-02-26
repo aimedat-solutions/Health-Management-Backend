@@ -234,7 +234,7 @@ class AdminCreateView(generics.CreateAPIView):
     def perform_create(self, serializer):
         user = serializer.save(role="admin") 
         default_password = "Admin"         
-        patient_group, created = Group.objects.get_or_create(name="patient")
+        patient_group, created = Group.objects.get_or_create(name="admin")
         user.groups.add(patient_group)  
         user.set_password(default_password)
         user.save()
