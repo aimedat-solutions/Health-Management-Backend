@@ -12,6 +12,7 @@ from users.filters import LabReportFilter
 from rest_framework.filters import OrderingFilter
 from rest_framework.viewsets import ModelViewSet
 from django.utils import timezone
+from datetime import timedelta
 from django.utils.timezone import now
 from django.shortcuts import get_object_or_404
 
@@ -111,6 +112,11 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
 
         """
         user = self.request.user
+        if user.initial_question_completed:
+            return Response(
+                {"message": "You have already completed the initial questions. No further responses are needed."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         data = request.data
         serializer = BulkPatientResponseSerializer(data=data)
         serializer.is_valid(raise_exception=True)
@@ -215,12 +221,22 @@ class DietQuestionsView(APIView):
         if not patient_diet:
             return Response({"message": "No diet records found. Please submit your diet details."}, status=status.HTTP_404_NOT_FOUND)
 
-        # Check if the diet update is due (every 15 days)
+        if timezone.now() >= patient_diet.last_diet_update + timedelta(days=15):
+            user.ask_diet_question = True  # Reset the flag in User model
+            user.save()
+            
         if not patient_diet.is_due_for_update():
-            return Response({"message": "Diet update not yet due.", "diet_details": DietQuestionSerializer(patient_diet).data}, status=status.HTTP_200_OK)
+            return Response({"message": "Diet update not yet due.", "diet_details": DietQuestionSerializer(patient_diet).data,"ask_diet_question": user.ask_diet_question}, status=status.HTTP_200_OK)
 
-        return Response({"message": "Diet update required.", "diet_details": DietQuestionSerializer(patient_diet).data}, status=status.HTTP_200_OK)
-    
+        return Response(
+            {
+                "message": "Diet details retrieved successfully.",
+                "diet_details": DietQuestionSerializer(patient_diet).data,
+                "ask_diet_question": user.ask_diet_question
+            },
+            status=status.HTTP_200_OK
+        )
+        
     def post(self, request):
         """
         POST the patient's diet details.
@@ -251,5 +267,15 @@ class DietQuestionsView(APIView):
         patient_diet.preBreakfast = request.data.get("preBreakfast", patient_diet.preBreakfast)
         patient_diet.last_diet_update = timezone.now()  # Update the timestamp
         patient_diet.save()
+        
+        user.ask_deit_question = False
+        user.save()
 
-        return Response({"message": "Diet details updated successfully.", "diet_details": DietQuestionSerializer(patient_diet).data}, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "message": "Diet details updated successfully.",
+                "diet_details": DietQuestionSerializer(patient_diet).data,
+                "ask_diet_question": user.ask_deit_question
+            },
+            status=status.HTTP_200_OK
+        )
