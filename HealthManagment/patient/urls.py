@@ -9,7 +9,7 @@ from users.views import DietPlanViewSet,ProfileAPIView,ExerciseListCreateView
 router = DefaultRouter()
 app_name = 'patient'
 router.register(r'diet-plans', DietPlanViewSet, basename='diet-plans')
-router.register(r'answer-responses', PatientResponseViewSet, basename='patientresponse')
+router.register(r'answers-intial-questions', PatientResponseViewSet, basename='patientresponse')
 router.register(r'lab-reports', LabReportViewSet, basename='labreport')
 
 urlpatterns = [

@@ -59,6 +59,8 @@ class CustomUser(AbstractUser, AuditModel):
     is_first_login = models.BooleanField(default=True)
     initial_question_completed = models.BooleanField(default=False)  
     last_diet_question_answered = models.DateTimeField(null=True, blank=True)
+    ask_diet_question = models.BooleanField(default=True) 
+
     
     REQUIRED_FIELDS = ['role']
     
