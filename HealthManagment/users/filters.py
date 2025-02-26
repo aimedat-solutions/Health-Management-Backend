@@ -1,5 +1,5 @@
 from django_filters import rest_framework as filters
-from .models import CustomUser, DietPlan, LabReport,Exercise
+from .models import CustomUser, DietPlan, LabReport,Exercise,RoleChoices
 
 class DietPlanFilter(filters.FilterSet):
     """
@@ -28,7 +28,7 @@ class LabReportFilter(filters.FilterSet):
         fields = ['patient_name', 'uploaded_by', 'report_date', 'report_date_range']   
         
 class CustomUserFilter(filters.FilterSet):
-    role = filters.ChoiceFilter(field_name="role", choices=CustomUser.ROLE_CHOICES)
+    role = filters.ChoiceFilter(field_name="role", choices=RoleChoices.choices)
     email = filters.CharFilter(field_name="email", lookup_expr='icontains')
     first_name = filters.CharFilter(field_name="first_name", lookup_expr='icontains')
     last_name = filters.CharFilter(field_name="last_name", lookup_expr='icontains')
