@@ -13,7 +13,7 @@ from rest_framework.filters import OrderingFilter
 from rest_framework.viewsets import ModelViewSet
 from django.utils import timezone
 from datetime import timedelta
-from django.utils.timezone import now
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 
 class LabReportViewSet(viewsets.ModelViewSet):
@@ -214,24 +214,36 @@ class DietQuestionsView(APIView):
 
         if user.role != "patient":
             return Response({"message": "Only patients can access diet questions."}, status=status.HTTP_403_FORBIDDEN)
-
-        # Get the patient's diet record
-        patient_diet = PatientDietQuestion.objects.filter(patient=user).order_by('-last_diet_update').first()
-
-        if not patient_diet:
-            return Response({"message": "No diet records found. Please submit your diet details."}, status=status.HTTP_404_NOT_FOUND)
-
-        if timezone.now() >= patient_diet.last_diet_update + timedelta(days=15):
-            user.ask_diet_question = True  # Reset the flag in User model
-            user.save()
+        
+        last_diet = PatientDietQuestion.objects.filter(patient=user).order_by('-last_diet_update').first()
+        
+        if not last_diet:
+            return Response(
+                {
+                    "message": "No diet records found. Please submit your diet details.",
+                    "ask_diet_question": user.ask_diet_question
+                }, 
+                status=status.HTTP_200_OK
+            )
             
-        if not patient_diet.is_due_for_update():
-            return Response({"message": "Diet update not yet due.", "diet_details": DietQuestionSerializer(patient_diet).data,"ask_diet_question": user.ask_diet_question}, status=status.HTTP_200_OK)
+        if timezone.now() >= last_diet.last_diet_update + timedelta(days=int(settings.DIET_QUESTION_ADD_DAYS)):
+            user.ask_diet_question = True  
+            user.save()
+
+        if not last_diet.is_due_for_update():
+            return Response(
+                {
+                    "message": "Diet update not yet due.",
+                    "diet_details": DietQuestionSerializer(last_diet).data,
+                    "ask_diet_question": user.ask_diet_question
+                }, 
+                status=status.HTTP_200_OK
+            )
 
         return Response(
             {
                 "message": "Diet details retrieved successfully.",
-                "diet_details": DietQuestionSerializer(patient_diet).data,
+                "diet_details": DietQuestionSerializer(last_diet).data,
                 "ask_diet_question": user.ask_diet_question
             },
             status=status.HTTP_200_OK
@@ -255,8 +267,10 @@ class DietQuestionsView(APIView):
         if user.initial_question_completed and user.role != "patient":
             return Response({"message": "Only patients can add diet detials."}, status=status.HTTP_403_FORBIDDEN)
 
-        # Get or create a diet record for the patient
         patient_diet, created = PatientDietQuestion.objects.get_or_create(patient=user)
+
+        if not created and patient_diet.last_diet_update >= timezone.now() - timedelta(days=int(settings.DIET_QUESTION_ADD_DAYS)):
+            return Response({"message": "You can only submit diet details once."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Update diet details
         patient_diet.breakfast = request.data.get("breakfast", patient_diet.breakfast)
@@ -265,17 +279,19 @@ class DietQuestionsView(APIView):
         patient_diet.dinner = request.data.get("dinner", patient_diet.dinner)
         patient_diet.mms = request.data.get("mms", patient_diet.mms)
         patient_diet.preBreakfast = request.data.get("preBreakfast", patient_diet.preBreakfast)
-        patient_diet.last_diet_update = timezone.now()  # Update the timestamp
+        patient_diet.last_diet_update = timezone.now()
+
         patient_diet.save()
-        
-        user.ask_deit_question = False
+
+        # Set flag to False after submission
+        user.ask_diet_question = False
         user.save()
 
         return Response(
             {
-                "message": "Diet details updated successfully.",
+                "message": "Diet details saved successfully.",
                 "diet_details": DietQuestionSerializer(patient_diet).data,
-                "ask_diet_question": user.ask_deit_question
+                "ask_diet_question": user.ask_diet_question
             },
-            status=status.HTTP_200_OK
+            status=status.HTTP_201_CREATED
         )

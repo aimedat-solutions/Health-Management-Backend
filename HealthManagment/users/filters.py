@@ -1,5 +1,6 @@
 from django_filters import rest_framework as filters
 from .models import CustomUser, DietPlan, LabReport,Exercise,RoleChoices
+import django_filters
 
 class DietPlanFilter(filters.FilterSet):
     """
@@ -7,7 +8,7 @@ class DietPlanFilter(filters.FilterSet):
     """
     patient_name = filters.CharFilter(field_name="patient__username", lookup_expr='icontains')
     doctor_name = filters.CharFilter(field_name="doctor__username", lookup_expr='icontains')
-    date = filters.DateFilter(field_name="date")
+    date = django_filters.DateFilter(field_name="date", lookup_expr="exact")
     date_range = filters.DateFromToRangeFilter(field_name="date")
     blood_sugar_range = filters.CharFilter(field_name="blood_sugar_range", lookup_expr='icontains')
     meal_time = filters.CharFilter(field_name="meal_time", lookup_expr='icontains')

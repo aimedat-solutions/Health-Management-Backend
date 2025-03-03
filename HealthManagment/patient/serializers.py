@@ -37,6 +37,11 @@ class BulkPatientResponseSerializer(serializers.Serializer):
 
         return data      
 class DietQuestionSerializer(serializers.ModelSerializer):
+    ask_diet_question = serializers.SerializerMethodField()
+    
     class Meta:
         model = PatientDietQuestion
         fields = '__all__'   
+        
+    def get_ask_diet_question(self, obj):
+        return obj.patient.ask_diet_question

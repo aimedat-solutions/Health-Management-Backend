@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from phonenumber_field.serializerfields import PhoneNumberField
 from django.contrib.auth.models import Group, Permission
 from .utils import send_otp, verify_otp
-from .models import  Question, Profile,DietPlan,Exercise, CustomUser, Option, PatientResponse,LabReport
+from .models import  Question, Profile,DietPlan,Exercise, CustomUser, Option, PatientResponse,LabReport,DietPlanStatus
 import re,os
 from django.utils.text import slugify
 from rest_framework.exceptions import ValidationError
@@ -172,26 +172,25 @@ class DoctorRegistrationSerializer(serializers.ModelSerializer):
             send_otp(phone_number)
             return user
         
-
+class DietPlanStatusSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DietPlanStatus
+        fields = "__all__"
+        
 class DietPlanSerializer(serializers.ModelSerializer):
+    status = serializers.SerializerMethodField()
     meal_plan = serializers.ListField(child=serializers.CharField())
     class Meta:
         model = DietPlan
-        fields = ['id', 'patient', 'date', 'title', 'meal_plan','blood_sugar_range', 'trimester', 'meal_time', "created_at", "created_by", "updated_at", "updated_by"]
+        fields = "__all__"
+    
+    def get_status(self, obj):
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            status = DietPlanStatus.objects.filter(patient=request.user, diet_plan=obj).first()
+            return status.status if status else "pending"
+        return "pending"
 
-    def create(self, validated_data):
-        request = self.context.get('request')
-        patient = validated_data['patient']
-        doctor = request.user.doctor
-        if patient.doctor != doctor:
-            raise serializers.ValidationError("You can only create diet plans for your own patients.")
-        diet_plan = DietPlan.objects.create(**validated_data)
-        return diet_plan
-
-    def validate_meal_plan(self, value):
-        if not isinstance(value, list):
-            raise serializers.ValidationError("Meal plan must be a list of items.")
-        return value
 
 class ExerciseSerializer(serializers.ModelSerializer):
     class Meta:
