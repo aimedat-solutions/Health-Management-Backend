@@ -252,7 +252,25 @@ class DietPlan(AuditModel):
         
     def __str__(self):
         return f"{self.title} for {self.patient.first_name} on {self.date}"
-    
+
+class DietPlanStatus(models.Model):
+    STATUS_CHOICES = [
+        ("completed", "Completed"),
+        ("skipped", "Skipped"),
+        ("pending", "Pending"),
+    ]
+
+    patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="diet_statuses")
+    diet_plan = models.ForeignKey(DietPlan, on_delete=models.CASCADE, related_name="status_entries")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("patient", "diet_plan")
+
+    def __str__(self):
+        return f"{self.patient.first_name} - {self.diet_plan.title}: {self.status}"
+   
     
 class PatientResponse(AuditModel):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='answer_responses')
@@ -266,13 +284,13 @@ class PatientResponse(AuditModel):
     
 class PatientDietQuestion(AuditModel):
     patient = models.OneToOneField(CustomUser, on_delete=models.CASCADE, limit_choices_to={'role': 'patient'})
-    date = models.DateField(default=timezone.now, null=True)  
-    breakfast = models.TextField()
-    lunch = models.TextField()
-    eveningSnack = models.TextField()
-    dinner = models.TextField()
-    mms = models.TextField()
-    preBreakfast = models.TextField()
+    date = models.DateField(default=timezone.now, null=True,blank=True)  
+    breakfast = models.TextField(null=True, blank=True)
+    lunch = models.TextField(null=True, blank=True)
+    eveningSnack = models.TextField(null=True, blank=True)
+    dinner = models.TextField(null=True, blank=True)
+    mms = models.CharField(max_length=10, null=True, blank=True)
+    preBreakfast = models.TextField(null=True, blank=True)
     
     last_diet_update = models.DateTimeField(default=timezone.now)
 
@@ -280,13 +298,8 @@ class PatientDietQuestion(AuditModel):
         return f"Diet question for {self.patient.username} on {self.date}"
     
     def is_due_for_update(self):
-        return timezone.now() >= self.last_diet_update + timedelta(days=15)
+        return self.last_diet_update and timezone.now() >= self.last_diet_update + timedelta(days=int(settings.DIET_QUESTION_ADD_DAYS))
     
-    def save(self, *args, **kwargs):
-        # Ensure only "patient" users can be assigned
-        if self.patient.role != 'patient':
-            raise ValueError("Only users with the 'patient' role can have a diet schedule.")
-        super().save(*args, **kwargs)
 
 class LabReport(AuditModel):
     patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="lab_reports")
