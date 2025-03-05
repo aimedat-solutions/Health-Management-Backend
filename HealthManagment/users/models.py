@@ -284,21 +284,19 @@ class PatientResponse(AuditModel):
     
 class PatientDietQuestion(AuditModel):
     patient = models.OneToOneField(CustomUser, on_delete=models.CASCADE, limit_choices_to={'role': 'patient'})
-    date = models.DateField(default=timezone.now, null=True,blank=True)  
     breakfast = models.TextField(null=True, blank=True)
     lunch = models.TextField(null=True, blank=True)
     eveningSnack = models.TextField(null=True, blank=True)
     dinner = models.TextField(null=True, blank=True)
     mms = models.CharField(max_length=10, null=True, blank=True)
     preBreakfast = models.TextField(null=True, blank=True)
-    
-    last_diet_update = models.DateTimeField(default=timezone.now)
+    last_diet_update = models.DateField(auto_now=True)
 
     def __str__(self):
-        return f"Diet question for {self.patient.username} on {self.date}"
+        return f"Diet question for {self.patient.username} on {self.last_diet_update}"
     
     def is_due_for_update(self):
-        return self.last_diet_update and timezone.now() >= self.last_diet_update + timedelta(days=int(settings.DIET_QUESTION_ADD_DAYS))
+        return self.last_diet_update and timezone.now().date() >= self.last_diet_update + timedelta(days=int(settings.DIET_QUESTION_ADD_DAYS))
     
 
 class LabReport(AuditModel):
