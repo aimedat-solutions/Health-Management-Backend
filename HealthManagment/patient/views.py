@@ -226,7 +226,7 @@ class DietQuestionsView(APIView):
                 status=status.HTTP_200_OK
             )
             
-        if timezone.now() >= last_diet.last_diet_update + timedelta(days=int(settings.DIET_QUESTION_ADD_DAYS)):
+        if timezone.now().date() >= last_diet.last_diet_update + timedelta(days=int(settings.DIET_QUESTION_ADD_DAYS)):
             user.ask_diet_question = True  
             user.save()
 
@@ -269,8 +269,8 @@ class DietQuestionsView(APIView):
 
         patient_diet, created = PatientDietQuestion.objects.get_or_create(patient=user)
 
-        if not created and patient_diet.last_diet_update >= timezone.now() - timedelta(days=int(settings.DIET_QUESTION_ADD_DAYS)):
-            return Response({"message": "You can only submit diet details once."}, status=status.HTTP_400_BAD_REQUEST)
+        if not created and patient_diet.last_diet_update >= timezone.now().date() - timedelta(days=int(settings.DIET_QUESTION_ADD_DAYS)):
+            return Response({"message": "Already Submited Diet detials...!"}, status=status.HTTP_400_BAD_REQUEST)
 
         # Update diet details
         patient_diet.breakfast = request.data.get("breakfast", patient_diet.breakfast)
