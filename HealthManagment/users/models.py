@@ -157,7 +157,25 @@ class Exercise(AuditModel):
     def __str__(self):
         return f"{self.exercise_name} by {self.user.username}"
 
+class ExerciseStatus(AuditModel):
+    STATUS_CHOICES = [
+        ("completed", "Completed"),
+        ("skipped", "Skipped"),
+        ("pending", "Pending"),
+    ]
 
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="exercise_statuses")
+    exercise = models.ForeignKey(Exercise, on_delete=models.CASCADE, related_name="status_entries")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    updated_at = models.DateTimeField(auto_now=True)
+    reason_audio = models.BinaryField(blank=True, null=True)  # Store audio in binary format
+
+    class Meta:
+        unique_together = ("user", "exercise")
+
+    def __str__(self):
+        return f"{self.user.username} - {self.exercise.exercise_name}: {self.status}"
+    
 class DoctorExerciseResponse(AuditModel):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     exercise = models.ForeignKey(Exercise, on_delete=models.CASCADE)
@@ -235,25 +253,45 @@ class Profile(AuditModel):
     
     def __str__(self):
         return f"{self.user.username}'s Profile"
-
+class MealPortion(AuditModel):
+    name = models.CharField(max_length=255) 
+    
+    def __str__(self):
+        return self.name
+    
 class DietPlan(AuditModel):
     patient = models.ForeignKey(CustomUser , on_delete=models.CASCADE, related_name="assigned_diets")
     doctor = models.ForeignKey(CustomUser , on_delete=models.CASCADE, related_name="created_diets")
-    date = models.DateField(default=datetime.date.today)
-    title = models.CharField(max_length=100)
-    blood_sugar_range = models.CharField(max_length=50, choices=[("low", "Low"), ("normal", "Normal"), ("high", "High")])
-    meal_time = models.CharField(max_length=50, choices=[("morning", "Morning"), ("afternoon", "Afternoon"), ("evening", "Evening")])
-    trimester = models.CharField(max_length=50)
-    meal_plan = models.JSONField(help_text="Enter the meal plan in JSON format")
-    doctor_comment = models.TextField(blank=True, null=True, verbose_name="Doctor's Comments")
-
-    class Meta:
-        unique_together = ("patient", "date")
         
     def __str__(self):
-        return f"{self.title} for {self.patient.first_name} on {self.date}"
+        return f"Diet Plan for {self.patient}"
 
-class DietPlanStatus(models.Model):
+class DietPlanDate(AuditModel):
+    diet_plan = models.ForeignKey(DietPlan, on_delete=models.CASCADE, related_name="diet_dates")
+    date = models.DateField()
+
+    class Meta:
+        unique_together = ("diet_plan", "date")  # Prevents duplicate date entries
+
+    def __str__(self):
+        return f"{self.diet_plan.patient} - {self.date}"
+
+class DietPlanMeal(models.Model):
+    MEAL_TYPES = [
+        ("breakfast", "Breakfast"),
+        ("lunch", "Lunch"),
+        ("dinner", "Dinner"),
+        ("snacks", "Snacks"),
+    ]
+
+    diet_plan = models.ForeignKey(DietPlan, on_delete=models.CASCADE, related_name="meals")
+    meal_type = models.CharField(max_length=20, choices=MEAL_TYPES)  
+    meal_portions = models.ManyToManyField(MealPortion)
+
+    def __str__(self):
+        return f"{self.meal_type} for {self.diet_plan.patient}"
+    
+class DietPlanStatus(AuditModel):
     STATUS_CHOICES = [
         ("completed", "Completed"),
         ("skipped", "Skipped"),
@@ -263,6 +301,7 @@ class DietPlanStatus(models.Model):
     patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="diet_statuses")
     diet_plan = models.ForeignKey(DietPlan, on_delete=models.CASCADE, related_name="status_entries")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    reason_audio = models.BinaryField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
