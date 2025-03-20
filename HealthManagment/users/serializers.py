@@ -179,7 +179,7 @@ class DietPlanStatusSerializer(serializers.ModelSerializer):
         
 class DietPlanSerializer(serializers.ModelSerializer):
     status = serializers.SerializerMethodField()
-    meal_plan = serializers.ListField(child=serializers.CharField())
+    meal_plan = serializers.JSONField()
     class Meta:
         model = DietPlan
         fields = "__all__"
