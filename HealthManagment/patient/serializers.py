@@ -1,11 +1,40 @@
 from rest_framework import serializers
-from users.models import DietPlan, LabReport, Question, Option,PatientResponse,PatientDietQuestion
+from users.models import DietPlan, LabReport, Question, Option,PatientResponse, PatientDietQuestion, DietPlanStatus, ExerciseStatus
+       
+class DietPlanStatusSerializer(serializers.ModelSerializer):
+    reason_audio = serializers.FileField(required=False)
+
+    class Meta:
+        model = DietPlanStatus
+        fields = ['status', 'reason_audio', 'diet_plan' ]
+
+    def create(self, validated_data):
+        """Convert audio file to binary before saving"""
+        audio_file = validated_data.pop('reason_audio', None)
+
+        if audio_file:
+            validated_data['reason_audio'] = audio_file.read()  # Convert file to binary
+
+        return DietPlanStatus.objects.create(**validated_data)
+
+    def get_reason_audio(self, obj):
+        """Return the binary data as a base64 encoded string"""
+        if obj.reason_audio:
+            import base64
+            return base64.b64encode(obj.reason_audio).decode('utf-8')
+        return None
 
 class DietPlanSerializer(serializers.ModelSerializer):
+    status = serializers.SerializerMethodField()
     class Meta:
         model = DietPlan
         fields = '__all__'
-
+        
+    def get_status(self, obj):
+        """Retrieve the latest diet plan status for the patient"""
+        status_entry = obj.status_entries.order_by('-updated_at').first()
+        return DietPlanStatusSerializer(status_entry).data if status_entry else None
+    
 class LabReportSerializer(serializers.ModelSerializer):
     class Meta:
         model = LabReport
@@ -45,3 +74,26 @@ class DietQuestionSerializer(serializers.ModelSerializer):
         
     def get_ask_diet_question(self, obj):
         return obj.patient.ask_diet_question
+    
+class ExerciseStatusSerializer(serializers.ModelSerializer):
+    reason_audio = serializers.FileField(required=False)
+
+    class Meta:
+        model = ExerciseStatus
+        fields = ["exercise", "status", "reason_audio"]
+
+    def create(self, validated_data):
+        """Convert audio file to binary before saving"""
+        audio_file = validated_data.pop('reason_audio', None)
+
+        if audio_file:
+            validated_data['reason_audio'] = audio_file.read() 
+
+        return DietPlanStatus.objects.create(**validated_data)
+
+    def get_reason_audio(self, obj):
+        """Return the binary data as a base64 encoded string"""
+        if obj.reason_audio:
+            import base64
+            return base64.b64encode(obj.reason_audio).decode('utf-8')
+        return None

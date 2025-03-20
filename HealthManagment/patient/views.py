@@ -1,11 +1,11 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from users.models import DietPlan, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, Option
-from .serializers import PatientResponseSerializer, LabReportSerializer, QuestionSerializer,DietQuestionSerializer,BulkPatientResponseSerializer
+from users.models import DietPlan, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, Option, DietPlanStatus,Exercise,ExerciseStatus
+from .serializers import PatientResponseSerializer, LabReportSerializer, QuestionSerializer, DietQuestionSerializer, DietPlanSerializer, DietPlanStatusSerializer, BulkPatientResponseSerializer,ExerciseStatusSerializer
 from users.permissions import PermissionsManager
 from rest_framework import viewsets, permissions,generics,status
-from rest_framework.decorators import action
+from rest_framework.parsers import MultiPartParser, FormParser
 from users.serializers import QuestionCreateSerializer
 from django_filters.rest_framework import DjangoFilterBackend
 from users.filters import LabReportFilter
@@ -295,3 +295,81 @@ class DietQuestionsView(APIView):
             },
             status=status.HTTP_201_CREATED
         )
+
+class DietPlanView(APIView):
+    serializer_class = DietPlanSerializer
+    permission_classes = [PermissionsManager]
+    codename = 'dietplan'
+    
+    def get(self, request):
+        """Get diet plans for the logged-in patient"""
+        user = request.user
+        plans = DietPlan.objects.filter(patient=user)
+        serializer = DietPlanSerializer(plans, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+class CompleteSkipDietPlanView(APIView):
+    serializer_class = DietPlanStatusSerializer
+    permission_classes = [PermissionsManager]
+    codename = 'dietplanstatus'
+    
+    def post(self, request):
+        """Mark diet plan as skipped"""
+        patient_id = request.user.id 
+        diet_plan_id = request.data.get("diet_plan")
+        new_status = request.data.get("status", "skipped")  
+        audio_file = request.FILES.get("audio_reason")
+
+        if not new_status or not diet_plan_id:
+            return Response(
+                {"error": "Both 'diet_plan' and 'status' are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        diet_plan = get_object_or_404(DietPlan, id=diet_plan_id)
+
+        audio_data = None
+        if new_status == "skipped" and audio_file:
+            audio_data = audio_file.read()
+            
+        status_entry, created = DietPlanStatus.objects.update_or_create(
+            patient_id=patient_id,
+            diet_plan=diet_plan,
+            defaults={"status": new_status, "audio_reason": audio_data}
+        )
+        serializer = DietPlanStatusSerializer(status_entry)
+        
+        return Response(data=serializer.data, status=status.HTTP_200_OK)
+
+class CompleteSkipExerciseView(APIView):
+    serializer_class = ExerciseStatusSerializer
+    permission_classes = [PermissionsManager]  
+    codename = 'exercise_status'
+    
+    def post(self, request):
+        """Mark exercise as skipped or completed"""
+        user_id = request.user.id 
+        exercise_id = request.data.get("exercise")
+        new_status = request.data.get("status")  
+        audio_file = request.FILES.get("audio_reason")  
+
+        if not new_status or not exercise_id:
+            return Response(
+                {"error": "Both 'exercise' and 'status' are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        exercise = get_object_or_404(Exercise, id=exercise_id)
+
+        audio_data = None
+        if new_status == "skipped" and audio_file:
+            audio_data = audio_file.read()  
+            
+        status_entry, created = ExerciseStatus.objects.update_or_create(
+            user_id=user_id,  
+            exercise=exercise,
+            defaults={"status": new_status, "audio_reason": audio_data}
+        )
+
+        serializer = ExerciseStatusSerializer(status_entry)
+        return Response(serializer.data, status=status.HTTP_200_OK)

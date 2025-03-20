@@ -1,9 +1,10 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from users.models import CustomUser, DietPlan
-from .serializers import PatientSerializer, DietPlanSerializer
+from users.models import CustomUser, DietPlan, MealPortion
+from .serializers import PatientSerializer, DietPlanSerializer, MealPortionSerializer
 from users.permissions import PermissionsManager
+from rest_framework import viewsets, filters
 class PatientManagementView(APIView):
     """
     Allows doctors to view and edit patient details.
@@ -28,21 +29,36 @@ class PatientManagementView(APIView):
             return Response(serializer.data)
         return Response(serializer.errors, status=400)
 
-class AssignDietPlanView(APIView):
-    """
-    Allows doctors to assign diet plans to patients.
-    """
-    permission_classes = [PermissionsManager]
-    serializer_class = DietPlanSerializer
+class MealPortionViewSet(viewsets.ModelViewSet):
+    queryset = MealPortion.objects.all()
+    serializer_class = MealPortionSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ["name"]
 
-    def post(self, request):
-        if not hasattr(request.user, 'role') or request.user.role != 'doctor':
-            return Response({'error': 'Access denied'}, status=403)
-        serializer = DietPlanSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save(assigned_by=request.user)
-            return Response(serializer.data, status=201)
-        return Response(serializer.errors, status=400)
+class DietPlanViewSet(viewsets.ModelViewSet):
+    """
+    Allows doctors can add diet for patients.
+    example : {
+                "patient": 1,
+                "diet": {
+                    "breakfast": {
+                    "meal_portions": [1, 2]
+                    },
+                    "lunch": {
+                    "meal_portions": [3, 4]
+                    }
+                },
+                "dates": ["2025-03-21", "2025-03-22"]
+            }
+    """
+    queryset = DietPlan.objects.all()
+    serializer_class = DietPlanSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        user = self.request.user  
+        serializer.save(doctor=user)
 
 class ReviewHealthStatusView(APIView):
     """
@@ -53,7 +69,7 @@ class ReviewHealthStatusView(APIView):
     def get(self, request):
         if not hasattr(request.user, 'role') or request.user.role != 'doctor':
             return Response({'error': 'Access denied'}, status=403)
-        patients = User.objects.filter(role='patient')
+        patients = CustomUser.objects.filter(role='patient')
         data = []
         for patient in patients:
             health_status = {
