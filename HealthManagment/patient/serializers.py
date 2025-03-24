@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from users.models import DietPlan, LabReport, Question, Option,PatientResponse, PatientDietQuestion, DietPlanStatus, ExerciseStatus
-       
+from users.serializers import OptionSerializer
 class DietPlanStatusSerializer(serializers.ModelSerializer):
     reason_audio = serializers.FileField(required=False)
 
@@ -41,9 +41,13 @@ class LabReportSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class QuestionSerializer(serializers.ModelSerializer):
+    options = OptionSerializer(many=True, read_only=True)
     class Meta:
         model = Question
-        fields = '__all__'
+        fields = [
+            "id", "question_text", "category", "type", "placeholder", "max_length",
+            "created_at", "updated_at", "created_by", "updated_by", "options"
+        ]
 class PatientResponseSerializer(serializers.ModelSerializer):
     class Meta:
         model = PatientResponse
