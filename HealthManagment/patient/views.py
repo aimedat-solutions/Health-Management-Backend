@@ -344,7 +344,7 @@ class CompleteSkipDietPlanView(APIView):
 class CompleteSkipExerciseView(APIView):
     serializer_class = ExerciseStatusSerializer
     permission_classes = [PermissionsManager]  
-    codename = 'exercise_status'
+    codename = 'exercisestatus'
     
     def post(self, request):
         """Mark exercise as skipped or completed"""
