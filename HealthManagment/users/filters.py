@@ -47,4 +47,4 @@ class ExerciseFilter(filters.FilterSet):
 
     class Meta:
         model = Exercise
-        fields = ['exercise_name', 'exercise_type', 'date', 'date_range', 'patient_name']
+        fields = ['exercise_name', 'type', 'date', 'date_range', 'patient_name']

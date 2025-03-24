@@ -12,7 +12,11 @@ from .middleware import get_current_user
 from datetime import timedelta, date
 from django.utils.timezone import now
 
+######################################################################## Custom User Model ################################################################################################
 class AuditModel(models.Model):
+    """
+    Abstract model to track creation & update details of an object.
+    """
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True, db_index=True)
     created_by = models.ForeignKey(
@@ -34,6 +38,7 @@ class AuditModel(models.Model):
         abstract = True
 
     def save(self, *args, **kwargs):
+        """ Automatically set created_by & updated_by fields. """
         user = get_current_user()
         if not self.pk and not self.created_by:
             self.created_by = user
@@ -48,6 +53,9 @@ class RoleChoices(models.TextChoices):
     PATIENT = "patient", "Patient"
 
 class CustomUser(AbstractUser, AuditModel):
+    """
+    Custom User Model with phone authentication & role-based access.
+    """
     phone_number = PhoneNumberField(unique=True, blank=False, null=False)
     role = models.CharField(max_length=10, choices=RoleChoices.choices, default=RoleChoices.PATIENT)
     security_code = models.CharField(max_length=6, blank=True, null=True)  # Store OTP
@@ -65,6 +73,9 @@ class CustomUser(AbstractUser, AuditModel):
         return f"{self.role} . {self.username}"
     
     def needs_diet_questions(self):
+        """
+        Determines if the patient needs to answer diet questions (every 15 days).
+        """
         if self.last_diet_question_answered:
             return now() > self.last_diet_question_answered + timedelta(days=15)
         return True 
@@ -92,7 +103,10 @@ class CustomUser(AbstractUser, AuditModel):
         return expiration_date <= timezone.now()
 
     def send_confirmation(self):
-        """ Generate and send OTP to the user's phone number. """
+        """
+        Generates & sends OTP via MSG91 API.
+        Returns True if OTP is sent successfully, else False.
+        """
         msg91_api_key = settings.MSG91_API_KEY
         msg91_otp_template_id = settings.MSG91_OTP_TEMPLATE_ID
 
@@ -135,20 +149,24 @@ class CustomUser(AbstractUser, AuditModel):
 
 
 class Exercise(AuditModel):
+    """
+    Stores information about different exercises performed by a patient user.
+    """
+    class ExerciseType(models.TextChoices):
+        STRENGTH = 'strength', 'Strength Training'
+        CARDIO = 'cardio', 'Cardio'
+        FLEXIBILITY = 'flexibility', 'Flexibility'
+        BALANCE = 'balance', 'Balance'
+
+    class IntensityLevel(models.TextChoices):
+        LOW = 'low', 'Low'
+        MEDIUM = 'medium', 'Medium'
+        HIGH = 'high', 'High'
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='exercises')
     exercise_name = models.CharField(max_length=255)
-    exercise_type = models.CharField(max_length=100, choices=[
-        ('strength', 'Strength Training'),
-        ('cardio', 'Cardio'),
-        ('flexibility', 'Flexibility'),
-        ('balance', 'Balance'),
-    ])
+    type = models.CharField(max_length=50, choices=ExerciseType.choices)
     duration = models.DurationField()  # e.g., how long they did the exercise
-    intensity = models.CharField(max_length=50, choices=[
-        ('low', 'Low Intensity'),
-        ('medium', 'Medium Intensity'),
-        ('high', 'High Intensity'),
-    ])
+    intensity = models.CharField(max_length=50, choices=IntensityLevel.choices)
     calories_burned = models.PositiveIntegerField()
     date = models.DateField()
     video_content = models.FileField(upload_to='exercise_videos/', null=True, blank=True)
@@ -158,6 +176,9 @@ class Exercise(AuditModel):
         return f"{self.exercise_name} by {self.user.username}"
 
 class ExerciseStatus(AuditModel):
+    """
+    Tracks the status of exercises completed, skipped, or pending.
+    """
     STATUS_CHOICES = [
         ("completed", "Completed"),
         ("skipped", "Skipped"),
@@ -177,6 +198,9 @@ class ExerciseStatus(AuditModel):
         return f"{self.user.username} - {self.exercise.exercise_name}: {self.status}"
     
 class DoctorExerciseResponse(AuditModel):
+    """
+    Doctor's response to a patient's exercise performance.
+    """
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     exercise = models.ForeignKey(Exercise, on_delete=models.CASCADE)
     doctor = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='exercise_responses')
@@ -184,9 +208,13 @@ class DoctorExerciseResponse(AuditModel):
 
     def __str__(self):
         return f"Exercise Review by Dr. {self.doctor.username} for {self.user.username}"
+    
 
-
+######################################################################## Question Model ################################################################################################
 class Question(AuditModel):
+    """
+    Stores various health-related questions.
+    """
     QUESTION_CATEGORIES = [
         ("initial", "Initial Question"),
         ("other", "Others"),
@@ -212,6 +240,9 @@ class Question(AuditModel):
         super().save(*args, **kwargs)
 
 class Option(AuditModel):
+    """
+    Stores options for multiple-choice questions.
+    """
     id = models.AutoField(primary_key=True) 
     question = models.ForeignKey(Question, related_name='options', on_delete=models.CASCADE)
     value = models.CharField(max_length=100)
@@ -219,9 +250,20 @@ class Option(AuditModel):
     def __str__(self):
         return self.value
 
+class PatientResponse(AuditModel):
+    """
+    Stores patients' responses to various health questions.
+    """
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='answer_responses')
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='question_responses')
+    selected_option = models.ForeignKey(Option, null=True, blank=True, on_delete=models.SET_NULL)
+    response_text = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
+    def __str__(self):
+        return f"Answers by {self.user.username}for question {self.question.question_text[:30]}"
 
-######################################################################### PATIENT Model #########################################################################################################
+######################################################################### Profile Model #########################################################################################################
 
 class Profile(AuditModel):
     class GenderChoices(models.TextChoices):
@@ -253,13 +295,22 @@ class Profile(AuditModel):
     
     def __str__(self):
         return f"{self.user.username}'s Profile"
+    
+
+######################################################################## Diet and Meal Model ################################################################################################
 class MealPortion(AuditModel):
+    """
+    Defines meal portion categories for diet plans.
+    """
     name = models.CharField(max_length=255) 
     
     def __str__(self):
         return self.name
     
 class DietPlan(AuditModel):
+    """
+    Stores diet plan assigned to patients by doctors.
+    """
     patient = models.ForeignKey(CustomUser , on_delete=models.CASCADE, related_name="assigned_diets")
     doctor = models.ForeignKey(CustomUser , on_delete=models.CASCADE, related_name="created_diets")
         
@@ -267,6 +318,9 @@ class DietPlan(AuditModel):
         return f"Diet Plan for {self.patient}"
 
 class DietPlanDate(AuditModel):
+    """
+    Tracks assigned dates for diet plans.
+    """
     diet_plan = models.ForeignKey(DietPlan, on_delete=models.CASCADE, related_name="diet_dates")
     date = models.DateField()
 
@@ -277,21 +331,25 @@ class DietPlanDate(AuditModel):
         return f"{self.diet_plan.patient} - {self.date}"
 
 class DietPlanMeal(models.Model):
-    MEAL_TYPES = [
-        ("breakfast", "Breakfast"),
-        ("lunch", "Lunch"),
-        ("dinner", "Dinner"),
-        ("snacks", "Snacks"),
-    ]
-
+    """
+    Stores meal details within a diet plan.
+    """
+    class MealType(models.TextChoices):
+        BREAKFAST = "breakfast", "Breakfast"
+        LUNCH = "lunch", "Lunch"
+        DINNER = "dinner", "Dinner"
+        SNACKS = "snacks", "Snacks"
     diet_plan = models.ForeignKey(DietPlan, on_delete=models.CASCADE, related_name="meals")
-    meal_type = models.CharField(max_length=20, choices=MEAL_TYPES)  
+    meal_type = models.CharField(max_length=20, choices=MealType.choices)  
     meal_portions = models.ManyToManyField(MealPortion)
 
     def __str__(self):
         return f"{self.meal_type} for {self.diet_plan.patient}"
     
 class DietPlanStatus(AuditModel):
+    """
+    Tracks the completion status of diet plans.
+    """
     STATUS_CHOICES = [
         ("completed", "Completed"),
         ("skipped", "Skipped"),
@@ -310,18 +368,10 @@ class DietPlanStatus(AuditModel):
     def __str__(self):
         return f"{self.patient.first_name} - {self.diet_plan.title}: {self.status}"
    
-    
-class PatientResponse(AuditModel):
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='answer_responses')
-    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='question_responses')
-    selected_option = models.ForeignKey(Option, null=True, blank=True, on_delete=models.SET_NULL)
-    response_text = models.TextField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"Answers by {self.user.username}for question {self.question.question_text[:30]}"
-    
 class PatientDietQuestion(AuditModel):
+    """
+    Tracks dietary habits of a patient.
+    """
     patient = models.OneToOneField(CustomUser, on_delete=models.CASCADE, limit_choices_to={'role': 'patient'})
     breakfast = models.TextField(null=True, blank=True)
     lunch = models.TextField(null=True, blank=True)
@@ -338,7 +388,11 @@ class PatientDietQuestion(AuditModel):
         return self.last_diet_update and timezone.now().date() >= self.last_diet_update + timedelta(days=int(settings.DIET_QUESTION_ADD_DAYS))
     
 
+######################################################################## LabReport Model ################################################################################################
 class LabReport(AuditModel):
+    """
+    Stores medical reports uploaded by patients.
+    """
     patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="lab_reports")
     report_name = models.CharField(max_length=200)
     report_file = models.FileField(upload_to='lab_reports/')
@@ -346,8 +400,15 @@ class LabReport(AuditModel):
 
     def __str__(self):
         return f"{self.report_name} for {self.patient.first_name} on {self.date_of_report}"
+    
+    
+    
+######################################################################## Health Status Model ################################################################################################
 
 class HealthStatus(AuditModel):
+    """
+    Tracks user health parameters over time.
+    """
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='health_statuses')
     calories = models.PositiveIntegerField(help_text="Daily calorie intake", null=True, blank=True)
     height = models.FloatField(help_text="Height in cm", null=True, blank=True)
