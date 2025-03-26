@@ -264,23 +264,26 @@ class DietQuestionsView(APIView):
         """
         user = request.user
 
-        if user.initial_question_completed and user.role != "patient":
-            return Response({"message": "Only patients can add diet detials."}, status=status.HTTP_403_FORBIDDEN)
+        # Check if the user is a patient and has completed the initial questions
+        if user.role != "patient":
+            return Response({"message": "Only patients can add diet details."}, status=status.HTTP_403_FORBIDDEN)
+        
+        if not user.initial_question_completed:
+            return Response({"message": "Complete the initial questions first."}, status=status.HTTP_400_BAD_REQUEST)
 
         patient_diet, created = PatientDietQuestion.objects.get_or_create(patient=user)
 
-        if not created and patient_diet.last_diet_update >= timezone.now().date() - timedelta(days=int(settings.DIET_QUESTION_ADD_DAYS)):
-            return Response({"message": "Already Submited Diet detials...!"}, status=status.HTTP_400_BAD_REQUEST)
+        # Ensure the diet question can only be submitted after the allowed interval
+        allowed_days = int(getattr(settings, "DIET_QUESTION_ADD_DAYS", 7))  # Default to 7 days if setting is missing
+        if not created and patient_diet.last_diet_update >= timezone.now().date() - timedelta(days=allowed_days):
+            return Response({"message": "Diet details already submitted recently."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Update diet details
-        patient_diet.breakfast = request.data.get("breakfast", patient_diet.breakfast)
-        patient_diet.lunch = request.data.get("lunch", patient_diet.lunch)
-        patient_diet.eveningSnack = request.data.get("eveningSnack", patient_diet.eveningSnack)
-        patient_diet.dinner = request.data.get("dinner", patient_diet.dinner)
-        patient_diet.mms = request.data.get("mms", patient_diet.mms)
-        patient_diet.preBreakfast = request.data.get("preBreakfast", patient_diet.preBreakfast)
-        patient_diet.last_diet_update = timezone.now()
+        diet_fields = ["breakfast", "lunch", "eveningSnack", "dinner", "mms", "preBreakfast"]
+        for field in diet_fields:
+            setattr(patient_diet, field, request.data.get(field, getattr(patient_diet, field)))
 
+        patient_diet.last_diet_update = timezone.now()
         patient_diet.save()
 
         # Set flag to False after submission

@@ -1,10 +1,35 @@
 from rest_framework import serializers
-from users.models import CustomUser, DietPlan, MealPortion, DietPlanDate, DietPlanMeal
+from users.models import CustomUser, DietPlan, MealPortion, DietPlanDate, DietPlanMeal, Profile, HealthStatus
+
+class HealthStatusSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = HealthStatus
+        fields = [
+            "blood_pressure", "calories", "month", "weight", "height", "points", "bmi",
+            "blood_sugar", "cholesterol", "diet_followed", "exercise_followed", "points",
+            "diet_streak", "exercise_streak", "health_status"
+        ]
+
+class ProfileSerializer(serializers.ModelSerializer):
+    health_data = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Profile
+        fields = [
+            "first_name", "last_name", "age", "profile_image", "calories", "height", "weight", "health_data"
+        ]
+
+    def get_health_data(self, obj):
+        health_status = HealthStatus.objects.filter(patient=obj.user).first()
+        return HealthStatusSerializer(health_status).data if health_status else None
 
 class PatientSerializer(serializers.ModelSerializer):
+    profile = ProfileSerializer()
+
     class Meta:
         model = CustomUser
-        fields = ['id', 'username', 'email', 'phone_number', 'role']
+        fields = ["id", "role", "phone_number", "profile"]
+
 
 class MealPortionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -16,12 +41,12 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DietPlanMeal
-        fields = ["meal_type", "meal_portions"]
+        fields = "__all__"
 
 class DietPlanDateSerializer(serializers.ModelSerializer):
     class Meta:
         model = DietPlanDate
-        fields = ["date"]
+        fields = "__all__"
 
 class DietPlanSerializer(serializers.ModelSerializer):
     diet = serializers.DictField(write_only=True)
