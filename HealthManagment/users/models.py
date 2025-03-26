@@ -58,6 +58,7 @@ class CustomUser(AbstractUser, AuditModel):
     """
     phone_number = PhoneNumberField(unique=True, blank=False, null=False)
     role = models.CharField(max_length=10, choices=RoleChoices.choices, default=RoleChoices.PATIENT)
+    assigned_doctor = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_patients", limit_choices_to={"role": RoleChoices.DOCTOR},)
     security_code = models.CharField(max_length=6, blank=True, null=True)  # Store OTP
     is_verified = models.BooleanField(default=False)
     sent = models.DateTimeField(null=True)  # OTP sent time
@@ -71,6 +72,12 @@ class CustomUser(AbstractUser, AuditModel):
     
     def __str__(self):
         return f"{self.role} . {self.username}"
+    
+    def is_doctor(self):
+        return self.role == RoleChoices.DOCTOR
+
+    def is_patient(self):
+        return self.role == RoleChoices.PATIENT
     
     def needs_diet_questions(self):
         """
@@ -409,12 +416,21 @@ class HealthStatus(AuditModel):
     """
     Tracks user health parameters over time.
     """
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='health_statuses')
-    calories = models.PositiveIntegerField(help_text="Daily calorie intake", null=True, blank=True)
-    height = models.FloatField(help_text="Height in cm", null=True, blank=True)
-    weight = models.FloatField(help_text="Weight in kg", null=True, blank=True)
-    months = models.PositiveIntegerField(help_text="Number of months (e.g., pregnancy tracking)", null=True, blank=True)
-    status = models.TextField()
+    patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='health_records')
+    age = models.IntegerField()
+    months_pregnant = models.IntegerField(default=0)
+    blood_pressure = models.CharField(max_length=10, default="120/80")
+    calories = models.IntegerField(default=2000)
+    weight = models.CharField(max_length=10, default="60 KG")
+    height = models.CharField(max_length=10, default="165 CM")
+    bmi = models.FloatField(default=22.0)
+    blood_sugar = models.CharField(max_length=20, default="98 mg/dL")
+    cholesterol = models.CharField(max_length=20, default="180 mg/dL")
+    diet_followed = models.CharField(max_length=10, default="50%")
+    exercise_followed = models.CharField(max_length=10, default="50%")
+    diet_streak = models.CharField(max_length=10, default="0 Days")
+    exercise_streak = models.CharField(max_length=10, default="0 Days")
+    health_status = models.CharField(max_length=20, default="Good")
 
     def __str__(self):
-        return f'HealthStatus for {self.user.role} on {self.date}'
+        return f'HealthStatus for {self.patient.role}'
