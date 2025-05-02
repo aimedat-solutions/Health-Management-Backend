@@ -221,6 +221,7 @@ class UserListCreateView(generics.ListCreateAPIView):
     permission_classes = [PermissionsManager]
     filter_backends = [DjangoFilterBackend]
     filterset_class = CustomUserFilter
+    codename = 'user'
     
 class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
     """Superadmins and Admins can manage users"""
@@ -259,7 +260,9 @@ class DoctorDetailView(generics.RetrieveUpdateDestroyAPIView):
  
     
 class DoctorRegistrationAPIView(APIView):
+    permission_classes = [PermissionsManager]
     serializer_class = DoctorRegistrationSerializer
+    codename = 'user'
     def post(self, request):
         serializer = DoctorRegistrationSerializer(data=request.data)
         if serializer.is_valid():
@@ -396,7 +399,7 @@ class DashboardView(APIView):
         elif role == "patient":
             total_diets = DietPlan.objects.filter(patient=user).count()
             total_exercises = Exercise.objects.filter(user=user).count()
-            latest_health_status = HealthStatus.objects.filter(user=user).order_by("-created_at").first()
+            latest_health_status = HealthStatus.objects.filter(patient=user).order_by("-created_at").first()
             avg_calories_burned = Exercise.objects.filter(user=user).aggregate(Avg("calories_burned"))["calories_burned__avg"] or 0
 
             completed_exercises = Exercise.objects.filter(user=user).count()
@@ -407,7 +410,7 @@ class DashboardView(APIView):
             response_data.update({
                 "total_diets": total_diets,
                 "total_exercises": total_exercises,
-                "latest_health_status": latest_health_status.status if latest_health_status else "No status available",
+                "latest_health_status": latest_health_status.health_status if latest_health_status else "No status available",
                 "average_calories_burned_per_week": avg_calories_burned,
                 "goal_achievement_rate": goal_achievement_rate,
             })
