@@ -7,13 +7,13 @@ from django.shortcuts import get_object_or_404
 from .serializers import PatientSerializer, DietPlanSerializer, MealPortionSerializer
 from users.serializers import ExerciseSerializer
 from patient.serializers import LabReportSerializer, PatientResponseSerializer
-from users.permissions import PermissionsManager
+from users.permissions import PermissionsManager,IsDoctorUser, IsSuperAdmin, IsAdmin
 from rest_framework import viewsets, filters
 class PatientManagementView(APIView):
     """
     Allows doctors to view and edit patient details.
     """
-    # permission_classes = [PermissionsManager]
+    permission_classes = [PermissionsManager,IsDoctorUser,]
     serializer_class = PatientSerializer
 
     def get(self, request, patient_id=None):
@@ -53,7 +53,7 @@ class PatientManagementView(APIView):
 class MealPortionViewSet(viewsets.ModelViewSet):
     queryset = MealPortion.objects.all()
     serializer_class = MealPortionSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsSuperAdmin, IsAdmin]
     filter_backends = [filters.SearchFilter]
     search_fields = ["name"]
 
@@ -85,7 +85,7 @@ class ReviewHealthStatusView(APIView):
     """
     Allows doctors to review the health status of patients.
     """
-    permission_classes = [PermissionsManager]
+    permission_classes = [PermissionsManager,IsDoctorUser]
 
     def get(self, request):
         if not hasattr(request.user, 'role') or request.user.role != 'doctor':

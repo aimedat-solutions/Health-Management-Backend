@@ -20,13 +20,14 @@ class DietPlanFilter(filters.FilterSet):
         
 class LabReportFilter(filters.FilterSet):
     patient_name = filters.CharFilter(field_name="patient__username", lookup_expr='icontains')
+    phone_number = filters.CharFilter(field_name="patient__phone_number", lookup_expr='icontains')
     uploaded_by = filters.CharFilter(field_name="uploaded_by__username", lookup_expr='icontains')
-    report_date = filters.DateFilter(field_name="report_date")
-    report_date_range = filters.DateFromToRangeFilter(field_name="report_date")
+    date_of_report = filters.DateFilter(field_name="date_of_report")
+    date_of_report_range = filters.DateFromToRangeFilter(field_name="date_of_report")
 
     class Meta:
         model = LabReport
-        fields = ['patient_name', 'uploaded_by', 'report_date', 'report_date_range']   
+        fields = ['phone_number', 'patient_name', 'uploaded_by', 'date_of_report', 'date_of_report_range'] 
         
 class CustomUserFilter(filters.FilterSet):
     role = filters.ChoiceFilter(field_name="role", choices=RoleChoices.choices)

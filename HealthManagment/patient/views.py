@@ -1,9 +1,9 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from users.models import DietPlan, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, Option, DietPlanStatus,Exercise,ExerciseStatus
-from .serializers import PatientResponseSerializer, LabReportSerializer, QuestionSerializer, DietQuestionSerializer, DietPlanSerializer, DietPlanStatusSerializer, BulkPatientResponseSerializer,ExerciseStatusSerializer
-from users.permissions import PermissionsManager
+from users.models import DietPlan, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, Option, DietPlanStatus,Exercise,ExerciseStatus,HealthStatus
+from .serializers import PatientResponseSerializer,EmptyLabReportSerializer, HealthStatusSerializer, LabReportSerializer, QuestionSerializer, DietQuestionSerializer, DietPlanSerializer, DietPlanStatusSerializer, BulkPatientResponseSerializer,ExerciseStatusSerializer
+from users.permissions import PermissionsManager,IsDoctorUser,IsPatientUser
 from rest_framework import viewsets, permissions,generics,status
 from rest_framework.parsers import MultiPartParser, FormParser
 from users.serializers import QuestionCreateSerializer
@@ -17,24 +17,38 @@ from django.conf import settings
 from django.shortcuts import get_object_or_404
 
 class LabReportViewSet(viewsets.ModelViewSet):
+    permission_classes = [PermissionsManager,IsPatientUser]
     queryset = LabReport.objects.all()
     serializer_class = LabReportSerializer
-    permission_classes = [PermissionsManager]
     codename = 'labreport'
     filter_backends = [DjangoFilterBackend, OrderingFilter] 
     filterset_class = LabReportFilter
     ordering_fields = ['date_of_report']  
     ordering = ['-date_of_report']  
 
-    def get_queryset(self):
-        user = self.request.user
-        # Ensure user is authenticated
-        if user.is_authenticated:
-            if user.groups.filter(name='doctor').exists():  # Check if the user has the 'doctor' role
-                return LabReport.objects.all()
-            return LabReport.objects.filter(patient=user)
-        return LabReport.objects.none()  # If the user is not authenticated, return no reports
+    # def get_queryset(self):
+        # user = self.request.user
+        # # Ensure user is authenticated
+        # if user.is_authenticated:
+        #     if user.groups.filter(name='doctor').exists():  # Check if the user has the 'doctor' role
+        #         return LabReport.objects.all()
+        #     return LabReport.objects.filter(patient=user)
+        # return LabReport.objects.none()  # If the user is not authenticated, return no reports
+    
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
 
+        if not queryset.exists():
+            serializer = EmptyLabReportSerializer({})
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -66,8 +80,11 @@ class ViewHealthStatusView(APIView):
     permission_classes = [PermissionsManager]
 
     def get(self, request):
+        health_status_qs = HealthStatus.objects.filter(patient=request.user)
+        serializer = HealthStatusSerializer(health_status_qs, many=True)
+
         data = {
-            'diet_plans': DietPlan.objects.filter(assigned_to=request.user).count(),
+            'health_reports': serializer.data,
             'lab_reports': LabReport.objects.filter(patient=request.user).count(),
         }
         return Response(data)
