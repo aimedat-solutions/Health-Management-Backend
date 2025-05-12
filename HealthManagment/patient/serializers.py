@@ -1,6 +1,12 @@
 from rest_framework import serializers
-from users.models import DietPlan, LabReport, Question, Option,PatientResponse, PatientDietQuestion, DietPlanStatus, ExerciseStatus
+from users.models import DietPlan, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, DietPlanStatus, ExerciseStatus
 from users.serializers import OptionSerializer
+
+class EmptyLabReportSerializer(serializers.Serializer):
+    message = serializers.SerializerMethodField()
+
+    def get_message(self, obj):
+        return "This patient does not have any lab report until now."
 class DietPlanStatusSerializer(serializers.ModelSerializer):
     reason_audio = serializers.FileField(required=False)
 
@@ -36,10 +42,18 @@ class DietPlanSerializer(serializers.ModelSerializer):
         return DietPlanStatusSerializer(status_entry).data if status_entry else None
     
 class LabReportSerializer(serializers.ModelSerializer):
+    message = serializers.SerializerMethodField()
     class Meta:
         model = LabReport
         fields = '__all__'
-
+        
+    def get_message(self, obj):
+        return "Lab report exists for the patient."
+        
+class HealthStatusSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = HealthStatus
+        fields = '__all__'
 class QuestionSerializer(serializers.ModelSerializer):
     options = OptionSerializer(many=True, read_only=True)
     class Meta:

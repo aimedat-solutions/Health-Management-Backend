@@ -166,7 +166,7 @@ class DoctorRegistrationSerializer(serializers.ModelSerializer):
             group = Group.objects.get(name=validated_data['role'])
             user = CustomUser.objects.create(**validated_data)
             
-            Profile.objects.create(user=user)
+            profile, created = Profile.objects.get_or_create(user=user)
             user.groups.add(group)
             user.save()
             send_otp(phone_number)
@@ -196,7 +196,7 @@ class ExerciseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Exercise
         fields = [
-            'id', 'user', 'exercise_name', 'exercise_type', 'duration', 'image_content', 'video_content',
+            'id', 'user', 'exercise_name', 'type', 'duration', 'image_content', 'video_content',
             'intensity', 'calories_burned', 'date', "created_at", "created_by", "updated_at", "updated_by"
         ]
         read_only_fields = ['user', 'created_at', 'updated_at']
