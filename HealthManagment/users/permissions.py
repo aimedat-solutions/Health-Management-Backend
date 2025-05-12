@@ -41,3 +41,19 @@ class IsAdmin(permissions.BasePermission):
     """Allows access only to admins."""
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.role == "admin"
+
+class IsDoctorUser(permissions.BasePermission):
+    """
+    Custom permission to allow only users in the 'doctor' group.
+    """
+
+    def has_permission(self, request, view):
+        return request.user and request.user.is_authenticated and request.user.groups.filter(name='doctor').exists() and request.user.groups.filter(name='patient').exists()
+    
+class IsPatientUser(permissions.BasePermission):
+    """
+    Custom permission to allow only users in the 'doctor' group.
+    """
+
+    def has_permission(self, request, view):
+        return request.user and request.user.is_authenticated and request.user.groups.filter(name='patient').exists()

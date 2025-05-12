@@ -58,6 +58,7 @@ class CustomUser(AbstractUser, AuditModel):
     """
     phone_number = PhoneNumberField(unique=True, blank=False, null=False)
     role = models.CharField(max_length=10, choices=RoleChoices.choices, default=RoleChoices.PATIENT)
+    assigned_doctor = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_patients", limit_choices_to={"role": RoleChoices.DOCTOR},)
     security_code = models.CharField(max_length=6, blank=True, null=True)  # Store OTP
     is_verified = models.BooleanField(default=False)
     sent = models.DateTimeField(null=True)  # OTP sent time
@@ -67,10 +68,16 @@ class CustomUser(AbstractUser, AuditModel):
     ask_diet_question = models.BooleanField(default=True) 
 
     
-    REQUIRED_FIELDS = ['role']
+    REQUIRED_FIELDS = ['role', 'phone_number']
     
     def __str__(self):
         return f"{self.role} . {self.username}"
+    
+    def is_doctor(self):
+        return self.role == RoleChoices.DOCTOR
+
+    def is_patient(self):
+        return self.role == RoleChoices.PATIENT
     
     def needs_diet_questions(self):
         """
@@ -325,7 +332,7 @@ class DietPlanDate(AuditModel):
     date = models.DateField()
 
     class Meta:
-        unique_together = ("diet_plan", "date")  # Prevents duplicate date entries
+        unique_together = ("diet_plan", "date")  
 
     def __str__(self):
         return f"{self.diet_plan.patient} - {self.date}"
@@ -339,12 +346,12 @@ class DietPlanMeal(models.Model):
         LUNCH = "lunch", "Lunch"
         DINNER = "dinner", "Dinner"
         SNACKS = "snacks", "Snacks"
-    diet_plan = models.ForeignKey(DietPlan, on_delete=models.CASCADE, related_name="meals")
+    diet_plan = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="meals")
     meal_type = models.CharField(max_length=20, choices=MealType.choices)  
     meal_portions = models.ManyToManyField(MealPortion)
 
     def __str__(self):
-        return f"{self.meal_type} for {self.diet_plan.patient}"
+        return f"{self.meal_type} for {self.diet_plan.username}"
     
 class DietPlanStatus(AuditModel):
     """
@@ -357,7 +364,7 @@ class DietPlanStatus(AuditModel):
     ]
 
     patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="diet_statuses")
-    diet_plan = models.ForeignKey(DietPlan, on_delete=models.CASCADE, related_name="status_entries")
+    diet_plan = models.ForeignKey(DietPlanMeal, on_delete=models.CASCADE, related_name="status_entries")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
     reason_audio = models.BinaryField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -366,7 +373,7 @@ class DietPlanStatus(AuditModel):
         unique_together = ("patient", "diet_plan")
 
     def __str__(self):
-        return f"{self.patient.first_name} - {self.diet_plan.title}: {self.status}"
+        return f"{self.patient.first_name} - {self.diet_plan.MealType}: {self.status}"
    
 class PatientDietQuestion(AuditModel):
     """
@@ -409,12 +416,22 @@ class HealthStatus(AuditModel):
     """
     Tracks user health parameters over time.
     """
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='health_statuses')
-    calories = models.PositiveIntegerField(help_text="Daily calorie intake", null=True, blank=True)
-    height = models.FloatField(help_text="Height in cm", null=True, blank=True)
-    weight = models.FloatField(help_text="Weight in kg", null=True, blank=True)
-    months = models.PositiveIntegerField(help_text="Number of months (e.g., pregnancy tracking)", null=True, blank=True)
-    status = models.TextField()
+    patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='health_records')
+    blood_pressure = models.CharField(max_length=10, default="120/80")
+    calories = models.IntegerField(default=2000)
+    month = models.IntegerField(default=0)
+    weight = models.CharField(max_length=10, default="60 KG")
+    height = models.CharField(max_length=10, default="165 CM")
+    points = models.PositiveIntegerField(null=True, blank=True, help_text="Health points")
+    bmi = models.FloatField(default=22.0)
+    blood_sugar = models.CharField(max_length=20, default="98 mg/dL")
+    Colestrol = models.CharField(max_length=20, default="180 mg/dL")
+    diet_followed = models.CharField(max_length=10, default="50%")
+    exercise_followed = models.CharField(max_length=10, default="50%")
+    point = models.PositiveIntegerField(null=True, blank=True, help_text="Health point")
+    diet_streak = models.CharField(max_length=10, default="0 Days")
+    exercise_streak = models.CharField(max_length=10, default="0 Days")
+    health_status = models.CharField(max_length=20, default="Good")
 
     def __str__(self):
-        return f'HealthStatus for {self.user.role} on {self.date}'
+        return f'HealthStatus for {self.patient.role}'
