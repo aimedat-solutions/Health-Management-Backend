@@ -1,5 +1,5 @@
 from rest_framework import generics, permissions
-from .models import Profile, Question,DietPlan,Exercise, CustomUser,Option,PatientResponse, LabReport,DoctorExerciseResponse,HealthStatus
+from .models import Profile, Question,DietPlan,Exercise, CustomUser,Option,PatientResponse, DietPlanStatus,DoctorExerciseResponse,HealthStatus
 from .serializers import ExerciseSerializer, ProfileSerializer, DietPlanSerializer, DoctorRegistrationSerializer, QuestionSerializer,QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,PhoneNumberSerializer,LabReportSerializer
 from django.db.models import Count,Avg
 from django.contrib.auth.models import Group
@@ -28,6 +28,9 @@ from .pagination import Pagination
 from django_filters.rest_framework import DjangoFilterBackend
 from .filters import CustomUserFilter, DietPlanFilter,ExerciseFilter
 import os
+from rest_framework.decorators import action
+from django.shortcuts import get_object_or_404
+
 class UserRegistrationAPIView(APIView):
     serializer_class = UserRegistrationSerializer
     def post(self, request):
@@ -218,6 +221,7 @@ class UserListCreateView(generics.ListCreateAPIView):
     permission_classes = [PermissionsManager]
     filter_backends = [DjangoFilterBackend]
     filterset_class = CustomUserFilter
+    codename = 'user'
     
 class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
     """Superadmins and Admins can manage users"""
@@ -234,7 +238,7 @@ class AdminCreateView(generics.CreateAPIView):
     def perform_create(self, serializer):
         user = serializer.save(role="admin") 
         default_password = "Admin"         
-        patient_group, created = Group.objects.get_or_create(name="patient")
+        patient_group, created = Group.objects.get_or_create(name="admin")
         user.groups.add(patient_group)  
         user.set_password(default_password)
         user.save()
@@ -256,7 +260,9 @@ class DoctorDetailView(generics.RetrieveUpdateDestroyAPIView):
  
     
 class DoctorRegistrationAPIView(APIView):
+    permission_classes = [PermissionsManager]
     serializer_class = DoctorRegistrationSerializer
+    codename = 'user'
     def post(self, request):
         serializer = DoctorRegistrationSerializer(data=request.data)
         if serializer.is_valid():
@@ -268,70 +274,6 @@ class DoctorRegistrationAPIView(APIView):
                 "user_details": user_data
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        
-class DietPlanViewSet(viewsets.ModelViewSet):
-    queryset = DietPlan.objects.all()
-    serializer_class = DietPlanSerializer
-    permission_classes = [PermissionsManager]
-    codename = 'dietplan'
-    filterset_class = DietPlanFilter
-
-    def perform_create(self, serializer):
-        patient_id = self.request.data.get('patient_id')
-        try:
-            patient = Profile.objects.get(id=patient_id)
-        except Profile.DoesNotExist:
-            raise serializers.ValidationError("Patient does not exist.")
-        # Validate the date from the request
-        diet_date_str = self.request.data.get('date')
-        if not diet_date_str:
-            raise serializers.ValidationError({"date": "This field is required."})
-
-        try:
-            diet_date = date.fromisoformat(diet_date_str)
-        except ValueError:
-            raise serializers.ValidationError({"date": "Invalid date format. Use YYYY-MM-DD."})
-
-        # Check for future dates
-        if diet_date > date.today():
-            raise serializers.ValidationError({"date": "You cannot add a diet plan for a future date."})
-
-        # Check for duplicate diet plans for the same date
-        if DietPlan.objects.filter(patient=patient, date=diet_date).exists():
-            raise serializers.ValidationError({"date": f"A diet plan already exists for {diet_date_str}."})
-
-        # Enforce the 3-day rule
-        last_diet_plan = DietPlan.objects.filter(patient=patient).order_by('-date').first()
-        if last_diet_plan and (diet_date - last_diet_plan.date).days < 3:
-            raise serializers.ValidationError(
-                {"date": f"You can only add a diet plan every 3 days. Last plan was on {last_diet_plan.date}."}
-            )
-        serializer.save(patient=patient)
-    
-    def retrieve(self, request, patient_id, selected_date):
-        try:
-            # Convert selected_date to a date object
-            selected_date = date.fromisoformat(selected_date)
-            # Retrieve the diet plan for the specific date
-            diet_plan = DietPlan.objects.filter(patient_id=patient_id, date=selected_date)
-
-            if not diet_plan.exists():
-                return Response({"error": "Diet plan not found for the selected date."}, status=status.HTTP_404_NOT_FOUND)
-
-            serializer = DietPlanSerializer(diet_plan, many=True)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except ValueError:
-            return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        
-    def get_queryset(self):
-        user = self.request.user
-        if hasattr(user, 'doctor'):
-            return DietPlan.objects.filter(patient__doctor=user.doctor)
-        return DietPlan.objects.none()
-
 
 class QuestionListCreateView(generics.ListCreateAPIView):
     queryset = Question.objects.all()
@@ -457,7 +399,7 @@ class DashboardView(APIView):
         elif role == "patient":
             total_diets = DietPlan.objects.filter(patient=user).count()
             total_exercises = Exercise.objects.filter(user=user).count()
-            latest_health_status = HealthStatus.objects.filter(user=user).order_by("-created_at").first()
+            latest_health_status = HealthStatus.objects.filter(patient=user).order_by("-created_at").first()
             avg_calories_burned = Exercise.objects.filter(user=user).aggregate(Avg("calories_burned"))["calories_burned__avg"] or 0
 
             completed_exercises = Exercise.objects.filter(user=user).count()
@@ -468,7 +410,7 @@ class DashboardView(APIView):
             response_data.update({
                 "total_diets": total_diets,
                 "total_exercises": total_exercises,
-                "latest_health_status": latest_health_status.status if latest_health_status else "No status available",
+                "latest_health_status": latest_health_status.health_status if latest_health_status else "No status available",
                 "average_calories_burned_per_week": avg_calories_burned,
                 "goal_achievement_rate": goal_achievement_rate,
             })

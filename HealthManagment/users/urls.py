@@ -3,13 +3,14 @@ from rest_framework.routers import DefaultRouter
 from .views import ( ExerciseListCreateView,ExerciseDetailView,
 SendOrResendSMSAPIView,AdminCreateView,DoctorListCreateView,DoctorDetailView,
 UserListCreateView, UserDetailView,QuestionListCreateView, QuestionDetailView, ProfileAPIView,
-CustomLoginView,LogoutAPIView,DietPlanViewSet
+CustomLoginView,
 )
+from doctor.views import MealPortionViewSet
 app_name = 'users'
 
 
 router = DefaultRouter()
-router.register(r'diet-plans', DietPlanViewSet, basename='diet-plans')
+router.register(r"mealportions", MealPortionViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
@@ -18,8 +19,6 @@ urlpatterns = [
     path('users', UserListCreateView.as_view(), name='user-list-create'),
     path('users/<int:pk>/', UserDetailView.as_view(), name='user-detail'),
     path('login/', CustomLoginView.as_view(), name='login'),
-    # path('send-sms/', SendOrResendSMSAPIView.as_view(), name='send-sms'),
-    # path('logout/', LogoutAPIView.as_view(), name='logout'),
     
     path('doctors/', DoctorListCreateView.as_view(), name='doctor-list-create'),
     path('doctors/<int:pk>/', DoctorDetailView.as_view(), name='doctor-detail'),

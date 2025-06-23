@@ -1,39 +1,54 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from users.models import DietPlan, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion
-from .serializers import PatientResponseSerializer, LabReportSerializer, QuestionSerializer,DietQuestionSerializer
-from users.permissions import PermissionsManager
+from users.models import DietPlan, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, Option, DietPlanStatus,Exercise,ExerciseStatus,HealthStatus
+from .serializers import PatientResponseSerializer,EmptyLabReportSerializer, HealthStatusSerializer, LabReportSerializer, QuestionSerializer, DietQuestionSerializer, DietPlanSerializer, DietPlanStatusSerializer, BulkPatientResponseSerializer,ExerciseStatusSerializer
+from users.permissions import PermissionsManager,IsDoctorUser,IsPatientUser
 from rest_framework import viewsets, permissions,generics,status
-from rest_framework.decorators import action
+from rest_framework.parsers import MultiPartParser, FormParser
 from users.serializers import QuestionCreateSerializer
 from django_filters.rest_framework import DjangoFilterBackend
 from users.filters import LabReportFilter
 from rest_framework.filters import OrderingFilter
 from rest_framework.viewsets import ModelViewSet
 from django.utils import timezone
-from django.utils.timezone import now
+from datetime import timedelta
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 
 class LabReportViewSet(viewsets.ModelViewSet):
+    permission_classes = [PermissionsManager,IsPatientUser]
     queryset = LabReport.objects.all()
     serializer_class = LabReportSerializer
-    permission_classes = [PermissionsManager]
     codename = 'labreport'
     filter_backends = [DjangoFilterBackend, OrderingFilter] 
     filterset_class = LabReportFilter
     ordering_fields = ['date_of_report']  
     ordering = ['-date_of_report']  
 
-    def get_queryset(self):
-        user = self.request.user
-        # Ensure user is authenticated
-        if user.is_authenticated:
-            if user.groups.filter(name='doctor').exists():  # Check if the user has the 'doctor' role
-                return LabReport.objects.all()
-            return LabReport.objects.filter(patient=user)
-        return LabReport.objects.none()  # If the user is not authenticated, return no reports
+    # def get_queryset(self):
+        # user = self.request.user
+        # # Ensure user is authenticated
+        # if user.is_authenticated:
+        #     if user.groups.filter(name='doctor').exists():  # Check if the user has the 'doctor' role
+        #         return LabReport.objects.all()
+        #     return LabReport.objects.filter(patient=user)
+        # return LabReport.objects.none()  # If the user is not authenticated, return no reports
+    
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
 
+        if not queryset.exists():
+            serializer = EmptyLabReportSerializer({})
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -65,8 +80,11 @@ class ViewHealthStatusView(APIView):
     permission_classes = [PermissionsManager]
 
     def get(self, request):
+        health_status_qs = HealthStatus.objects.filter(patient=request.user)
+        serializer = HealthStatusSerializer(health_status_qs, many=True)
+
         data = {
-            'diet_plans': DietPlan.objects.filter(assigned_to=request.user).count(),
+            'health_reports': serializer.data,
             'lab_reports': LabReport.objects.filter(patient=request.user).count(),
         }
         return Response(data)
@@ -96,17 +114,78 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
 
         return super().list(request, *args, **kwargs)
     
-    def perform_create(self, serializer):
+    def create(self, request, *args, **kwargs):
         """
-        - Save patient responses.
-        - Check if all initial questions are answered.
-        - Only then update `initial_question_completed` to `True`.
+        - Accepts multiple question-answer pairs.
+        - Saves all responses.
+        - Checks if all initial questions are answered before updating user status.
+        - Example request for POST
+        {
+            "questions": ["1", "2", "3"],
+            "1": "5-7 hours",
+            "2": "First trimester (weeks 1-13)",
+            "3": "Ft"
+        }
+
         """
         user = self.request.user
-        response = serializer.save(user=user)  
+        if user.initial_question_completed:
+            return Response(
+                {"message": "You have already completed the initial questions. No further responses are needed."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        data = request.data
+        serializer = BulkPatientResponseSerializer(data=data)
+        serializer.is_valid(raise_exception=True)
         
-        total_initial_questions = Question.objects.filter(category="initial").count()
+        question_ids = serializer.validated_data["questions"]
+        responses_to_create = []
+        for q_id in question_ids:
+            try:
+                question = Question.objects.get(id=q_id)
+                response_value = data.get(str(q_id))  # Get the answer for the question
 
+                # Handle multiple-choice answers
+                if isinstance(response_value, list):
+                    for option_value in response_value:
+                        selected_option = Option.objects.filter(question=question, value=option_value).first()
+                        if selected_option:
+                            responses_to_create.append(
+                                PatientResponse(
+                                    user=user,
+                                    question=question,
+                                    selected_option=selected_option,
+                                    response_text=None
+                                )
+                            )
+                        else:
+                            responses_to_create.append(
+                                PatientResponse(
+                                    user=user,
+                                    question=question,
+                                    selected_option=None,
+                                    response_text=option_value
+                                )
+                            )
+                else:
+                    selected_option = Option.objects.filter(question=question, value=response_value).first()
+                    responses_to_create.append(
+                        PatientResponse(
+                            user=user,
+                            question=question,
+                            selected_option=selected_option,
+                            response_text=None if selected_option else response_value
+                        )
+                    )
+
+            except Question.DoesNotExist:
+                return Response({"error": f"Question ID {q_id} not found."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Bulk create responses
+        PatientResponse.objects.bulk_create(responses_to_create)
+
+        # Check if all initial questions are answered
+        total_initial_questions = Question.objects.filter(category="initial").count()
         answered_initial_questions = PatientResponse.objects.filter(
             user=user, question__category="initial"
         ).values_list("question", flat=True).distinct().count()
@@ -116,11 +195,11 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
             user.is_first_login = False  
             user.save()
 
-        return Response({"message": "Response saved!"}, status=status.HTTP_201_CREATED)
-
+        return Response({"message": "Responses saved successfully!"}, status=status.HTTP_201_CREATED)
 class InitialQuestionsView(generics.ListAPIView):
     serializer_class = QuestionSerializer
     permission_classes =[PermissionsManager]
+    codename = 'initialquestion'
 
     def get_queryset(self):
         user = self.request.user
@@ -142,6 +221,7 @@ class DietQuestionsView(APIView):
     permission_classes = [PermissionsManager]
     serializer_class = DietQuestionSerializer
     queryset = PatientDietQuestion.objects.all()
+    codename = 'patientdietquestion'
 
     def get(self, request):
         """
@@ -151,44 +231,165 @@ class DietQuestionsView(APIView):
 
         if user.role != "patient":
             return Response({"message": "Only patients can access diet questions."}, status=status.HTTP_403_FORBIDDEN)
+        
+        last_diet = PatientDietQuestion.objects.filter(patient=user).order_by('-last_diet_update').first()
+        
+        if not last_diet:
+            return Response(
+                {
+                    "message": "No diet records found. Please submit your diet details.",
+                    "ask_diet_question": user.ask_diet_question
+                }, 
+                status=status.HTTP_200_OK
+            )
+            
+        if timezone.now().date() >= last_diet.last_diet_update + timedelta(days=int(settings.DIET_QUESTION_ADD_DAYS)):
+            user.ask_diet_question = True  
+            user.save()
 
-        # Get the patient's diet record
-        patient_diet = PatientDietQuestion.objects.filter(patient=user).order_by('-last_diet_update').first()
+        if not last_diet.is_due_for_update():
+            return Response(
+                {
+                    "message": "Diet update not yet due.",
+                    "diet_details": DietQuestionSerializer(last_diet).data,
+                    "ask_diet_question": user.ask_diet_question
+                }, 
+                status=status.HTTP_200_OK
+            )
 
-        if not patient_diet:
-            return Response({"message": "No diet records found. Please submit your diet details."}, status=status.HTTP_404_NOT_FOUND)
-
-        # Check if the diet update is due (every 15 days)
-        if not patient_diet.is_due_for_update():
-            return Response({"message": "Diet update not yet due.", "diet_details": DietQuestionSerializer(patient_diet).data}, status=status.HTTP_200_OK)
-
-        return Response({"message": "Diet update required.", "diet_details": DietQuestionSerializer(patient_diet).data}, status=status.HTTP_200_OK)
-    
+        return Response(
+            {
+                "message": "Diet details retrieved successfully.",
+                "diet_details": DietQuestionSerializer(last_diet).data,
+                "ask_diet_question": user.ask_diet_question
+            },
+            status=status.HTTP_200_OK
+        )
+        
     def post(self, request):
         """
-        Update the patient's diet details.
+        POST the patient's diet details.
         Expected Request:
         {
             "breakfast": "Oatmeal with fruits",
-            "lunch": "Grilled chicken with salad",
-            "snack": "Mixed nuts",
-            "dinner": "Steamed fish with vegetables"
+            "lunch": "Grilled chicken with salad",      
+            "dinner": "Steamed fish with vegetables",
+            eveningSnack": "Mixed nuts", 
+            "mms": "3", 
+            "preBreakfast": "1"
         }
         """
         user = request.user
 
+        # Check if the user is a patient and has completed the initial questions
         if user.role != "patient":
-            return Response({"message": "Only patients can update diet questions."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"message": "Only patients can add diet details."}, status=status.HTTP_403_FORBIDDEN)
+        
+        if not user.initial_question_completed:
+            return Response({"message": "Complete the initial questions first."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Get or create a diet record for the patient
         patient_diet, created = PatientDietQuestion.objects.get_or_create(patient=user)
 
+        # Ensure the diet question can only be submitted after the allowed interval
+        allowed_days = int(getattr(settings, "DIET_QUESTION_ADD_DAYS", 7))  # Default to 7 days if setting is missing
+        if not created and patient_diet.last_diet_update >= timezone.now().date() - timedelta(days=allowed_days):
+            return Response({"message": "Diet details already submitted recently."}, status=status.HTTP_400_BAD_REQUEST)
+
         # Update diet details
-        patient_diet.breakfast = request.data.get("breakfast", patient_diet.breakfast)
-        patient_diet.lunch = request.data.get("lunch", patient_diet.lunch)
-        patient_diet.snack = request.data.get("snack", patient_diet.snack)
-        patient_diet.dinner = request.data.get("dinner", patient_diet.dinner)
-        patient_diet.last_diet_update = timezone.now()  # Update the timestamp
+        diet_fields = ["breakfast", "lunch", "eveningSnack", "dinner", "mms", "preBreakfast"]
+        for field in diet_fields:
+            setattr(patient_diet, field, request.data.get(field, getattr(patient_diet, field)))
+
+        patient_diet.last_diet_update = timezone.now()
         patient_diet.save()
 
-        return Response({"message": "Diet details updated successfully.", "diet_details": DietQuestionSerializer(patient_diet).data}, status=status.HTTP_200_OK)
+        # Set flag to False after submission
+        user.ask_diet_question = False
+        user.save()
+
+        return Response(
+            {
+                "message": "Diet details saved successfully.",
+                "diet_details": DietQuestionSerializer(patient_diet).data,
+                "ask_diet_question": user.ask_diet_question
+            },
+            status=status.HTTP_201_CREATED
+        )
+
+class DietPlanView(APIView):
+    serializer_class = DietPlanSerializer
+    permission_classes = [PermissionsManager]
+    codename = 'dietplan'
+    
+    def get(self, request):
+        """Get diet plans for the logged-in patient"""
+        user = request.user
+        plans = DietPlan.objects.filter(patient=user)
+        serializer = DietPlanSerializer(plans, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+class CompleteSkipDietPlanView(APIView):
+    serializer_class = DietPlanStatusSerializer
+    permission_classes = [PermissionsManager]
+    codename = 'dietplanstatus'
+    
+    def post(self, request):
+        """Mark diet plan as skipped"""
+        patient_id = request.user.id 
+        diet_plan_id = request.data.get("diet_plan")
+        new_status = request.data.get("status", "skipped")  
+        audio_file = request.FILES.get("audio_reason")
+
+        if not new_status or not diet_plan_id:
+            return Response(
+                {"error": "Both 'diet_plan' and 'status' are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        diet_plan = get_object_or_404(DietPlan, id=diet_plan_id)
+
+        audio_data = None
+        if new_status == "skipped" and audio_file:
+            audio_data = audio_file.read()
+            
+        status_entry, created = DietPlanStatus.objects.update_or_create(
+            patient_id=patient_id,
+            diet_plan=diet_plan,
+            defaults={"status": new_status, "audio_reason": audio_data}
+        )
+        serializer = DietPlanStatusSerializer(status_entry)
+        
+        return Response(data=serializer.data, status=status.HTTP_200_OK)
+
+class CompleteSkipExerciseView(APIView):
+    serializer_class = ExerciseStatusSerializer
+    permission_classes = [PermissionsManager]  
+    codename = 'exercisestatus'
+    
+    def post(self, request):
+        """Mark exercise as skipped or completed"""
+        user_id = request.user.id 
+        exercise_id = request.data.get("exercise")
+        new_status = request.data.get("status")  
+        audio_file = request.FILES.get("audio_reason")  
+
+        if not new_status or not exercise_id:
+            return Response(
+                {"error": "Both 'exercise' and 'status' are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        exercise = get_object_or_404(Exercise, id=exercise_id)
+
+        audio_data = None
+        if new_status == "skipped" and audio_file:
+            audio_data = audio_file.read()  
+            
+        status_entry, created = ExerciseStatus.objects.update_or_create(
+            user_id=user_id,  
+            exercise=exercise,
+            defaults={"status": new_status, "audio_reason": audio_data}
+        )
+
+        serializer = ExerciseStatusSerializer(status_entry)
+        return Response(serializer.data, status=status.HTTP_200_OK)
