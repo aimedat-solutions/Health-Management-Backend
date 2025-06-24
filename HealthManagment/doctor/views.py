@@ -23,11 +23,11 @@ class PatientManagementView(APIView):
         """
         doctor = request.user
         
-        if not doctor.role == "doctor":  # Ensure the user is a doctor
+        if doctor.role != "doctor":  # Ensure the user is a doctor
             return Response({"error": "Unauthorized access"}, status=status.HTTP_403_FORBIDDEN)
         
         if patient_id:
-            patient = get_object_or_404(CustomUser, id=patient_id, role='patient', assigned_doctor=doctor)
+            patient = get_object_or_404(CustomUser, id=patient_id, role='patient')
             # Fetch assigned data
             exercises = Exercise.objects.filter(user=patient)
             diet_plans = DietPlan.objects.filter(patient=patient)
@@ -45,10 +45,30 @@ class PatientManagementView(APIView):
             return Response(response_data, status=status.HTTP_200_OK)
         
         # If no patient_id is provided, return all patients
-        patients = CustomUser.objects.filter(role='patient', assigned_doctor=doctor) 
+        patients = CustomUser.objects.filter(role='patient') 
         response_data = {"patients": PatientSerializer(patients, many=True).data}
         return Response(response_data, status=status.HTTP_200_OK)
+    
+    def patch(self, request, patient_id=None):
+        """
+        Doctor can assign a patient to themselves.
+        """
+        user = request.user
+        if user.role != "doctor":
+            return Response({"error": "Unauthorized access"}, status=status.HTTP_403_FORBIDDEN)
 
+        if not patient_id:
+            return Response({"error": "Patient ID is required to assign."}, status=status.HTTP_400_BAD_REQUEST)
+
+        patient = get_object_or_404(CustomUser, id=patient_id, role='patient')
+
+        if patient.assigned_doctor:
+            return Response({"error": "This patient is already assigned to a doctor."}, status=status.HTTP_400_BAD_REQUEST)
+
+        patient.assigned_doctor = user
+        patient.save()
+
+        return Response({"message": f"Patient {patient.get_full_name()} has been assigned to you."}, status=status.HTTP_200_OK)
 
 class MealPortionViewSet(viewsets.ModelViewSet):
     queryset = MealPortion.objects.all()
