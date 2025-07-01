@@ -134,11 +134,20 @@ class ProfileSerializer(serializers.ModelSerializer):
         model = Profile
         fields = [
             'id', 'first_name', 'last_name', 'date_of_birth', 'age', 'gender',
-            'address', 'specialization', 'profile_image', 'calories', 
+            'address', 'specialization', 'profile_image', 'month', 
             'height', 'weight', 'role', 'phone_number', 
         ]
         
-    
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request', None)
+
+        if request and hasattr(request, 'user') and request.user.is_authenticated:
+            if request.user.role != 'doctor':
+                data.pop('specialization', None)
+        else:
+            data.pop('specialization', None)
+        return data
 class DoctorRegistrationSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser

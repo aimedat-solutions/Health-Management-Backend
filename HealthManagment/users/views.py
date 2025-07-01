@@ -204,7 +204,7 @@ class ProfileAPIView(APIView):
         Retrieve the profile of the logged-in user.
         """ 
         profile, created = Profile.objects.get_or_create(user=request.user)  # Auto-create if missing
-        serializer = ProfileSerializer(profile)
+        serializer = ProfileSerializer(profile, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def put(self, request):
