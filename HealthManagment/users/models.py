@@ -285,7 +285,7 @@ class Profile(AuditModel):
     specialization = models.CharField(max_length=255, null=True, blank=True, help_text="Only for doctors")  
     profile_image = models.ImageField(upload_to='profile_images/', null=True, blank=True)
     age = models.PositiveIntegerField(null=True, blank=True, help_text="Auto-calculated based on date_of_birth")
-    calories = models.PositiveIntegerField(help_text="Daily calorie intake", null=True, blank=True)
+    month = models.PositiveIntegerField(help_text="Pregnancy month (1–9)", null=True, blank=True)
     height = models.FloatField(help_text="Height in cm", null=True, blank=True)
     weight = models.FloatField(help_text="Weight in kg", null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
