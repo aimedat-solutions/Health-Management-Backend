@@ -152,7 +152,7 @@ class SendOrResendSMSAPIView(GenericAPIView):
     def post(self, request):
         phone_number = request.data.get("phone_number", None)
         environment = os.getenv('DJANGO_ENV', 'development')
-
+        print(phone_number)
         if phone_number:
             try:
                 user = CustomUser.objects.get(phone_number=phone_number)
@@ -194,7 +194,11 @@ class ProfileAPIView(APIView):
     permission_classes = [PermissionsManager]
     serializer_class = ProfileSerializer
     codename = 'profile'
-
+    
+    def get_object(self):
+        profile, _ = Profile.objects.get_or_create(user=self.request.user)
+        return profile
+    
     def get(self, request):
         """
         Retrieve the profile of the logged-in user.
@@ -207,8 +211,8 @@ class ProfileAPIView(APIView):
         """
         Update the profile of the logged-in user.
         """
-        profile, _ = Profile.objects.get_or_create(user=request.user)  # Ensure a profile exists
-        serializer = ProfileSerializer(profile, data=request.data, partial=True)
+        profile = self.get_object()
+        serializer = ProfileSerializer(profile, data=request.data, partial=True)  # allows partial updates
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
