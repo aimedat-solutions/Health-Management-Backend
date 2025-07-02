@@ -130,6 +130,7 @@ class CustomUserSerializer(serializers.ModelSerializer):
 class ProfileSerializer(serializers.ModelSerializer):
     role = serializers.CharField(source='user.role', read_only=True)
     phone_number = serializers.CharField(source='user.phone_number', read_only=True)
+    profile_image = serializers.SerializerMethodField()
     class Meta:
         model = Profile
         fields = [
@@ -138,6 +139,15 @@ class ProfileSerializer(serializers.ModelSerializer):
             'height', 'weight', 'role', 'phone_number', 
         ]
         
+    def get_profile_image(self, obj):
+        request = self.context.get('request')
+        if obj.profile_image:
+            url = obj.profile_image.url
+            # Make absolute for local development
+            if request is not None:
+                return request.build_absolute_uri(url)
+            return url
+        return None    
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get('request', None)
@@ -156,29 +166,48 @@ class DoctorRegistrationSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         phone_number = validated_data.get('phone_number')
+        environment = os.getenv('DJANGO_ENV', 'development')
 
+        print(phone_number)
         try:
             user = CustomUser.objects.get(phone_number=phone_number)
-            send_otp(phone_number)
+            print(user)
+            if environment in ['production', 'staging']:
+                send_otp(phone_number)
+                self.context['otp_sent'] = True
+            else:
+                self.context['otp_sent'] = False
+
             return user
+
         except CustomUser.DoesNotExist:
+            # Registration flow
             validated_data['role'] = 'doctor'
             base_username = slugify(phone_number)
             username = base_username
-            num_suffix = 1
+            suffix = 1
             while CustomUser.objects.filter(username=username).exists():
-                username = f"{base_username}_{num_suffix}"
-                num_suffix += 1
-            
+                username = f"{base_username}_{suffix}"
+                suffix += 1
+
             validated_data['username'] = username
             validated_data['password'] = CustomUser.objects.make_random_password()
-            group = Group.objects.get(name=validated_data['role'])
             user = CustomUser.objects.create(**validated_data)
-            
-            profile, created = Profile.objects.get_or_create(user=user)
-            user.groups.add(group)
-            user.save()
-            send_otp(phone_number)
+
+            # Assign to doctor group
+            doctor_group = Group.objects.get(name='doctor')
+            user.groups.add(doctor_group)
+
+            # Create profile if not exists
+            Profile.objects.get_or_create(user=user)
+
+            # Send OTP in allowed envs
+            if environment in ['production', 'staging']:
+                send_otp(phone_number)
+                self.context['otp_sent'] = True
+            else:
+                self.context['otp_sent'] = False
+
             return user
         
 class DietPlanStatusSerializer(serializers.ModelSerializer):
