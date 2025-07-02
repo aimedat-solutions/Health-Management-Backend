@@ -152,7 +152,7 @@ class SendOrResendSMSAPIView(GenericAPIView):
     def post(self, request):
         phone_number = request.data.get("phone_number", None)
         environment = os.getenv('DJANGO_ENV', 'development')
-        print(phone_number)
+        
         if phone_number:
             try:
                 user = CustomUser.objects.get(phone_number=phone_number)
@@ -264,10 +264,11 @@ class DoctorDetailView(generics.RetrieveUpdateDestroyAPIView):
  
     
 class DoctorRegistrationAPIView(APIView):
-    permission_classes = [PermissionsManager]
+    # permission_classes = [PermissionsManager]
     serializer_class = DoctorRegistrationSerializer
-    codename = 'user'
+    # codename = 'user'
     def post(self, request):
+        print(request.data)
         serializer = DoctorRegistrationSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()

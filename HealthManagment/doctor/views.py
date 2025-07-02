@@ -2,9 +2,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
-from users.models import CustomUser, DietPlan, MealPortion, Exercise, LabReport, PatientResponse, HealthStatus, Profile
+from users.models import CustomUser, DietPlan, MealPortion, Exercise, LabReport, PatientResponse, HealthStatus, DietPlanMeal
 from django.shortcuts import get_object_or_404
-from .serializers import PatientSerializer, DietPlanSerializer, MealPortionSerializer
+from .serializers import PatientSerializer, DietPlanCreateSerializer, MealPortionSerializer,DietPlanReadSerializer,DietPlanMealSerializer
 from users.serializers import ExerciseSerializer
 from patient.serializers import LabReportSerializer, PatientResponseSerializer
 from users.permissions import PermissionsManager,IsDoctorUser, IsSuperAdmin, IsAdmin
@@ -37,7 +37,7 @@ class PatientManagementView(APIView):
             response_data = {
                 "patient_details": PatientSerializer(patient).data,
                 "assigned_exercises": ExerciseSerializer(exercises, many=True).data,
-                "assigned_diet_plans": DietPlanSerializer(diet_plans, many=True).data,
+                "assigned_diet_plans": DietPlanMealSerializer(diet_plans, many=True).data,
                 "lab_reports": LabReportSerializer(lab_reports, many=True).data,
                 "questions": PatientResponseSerializer(questions, many=True).data
             }
@@ -79,27 +79,45 @@ class MealPortionViewSet(viewsets.ModelViewSet):
 
 class DietPlanViewSet(viewsets.ModelViewSet):
     """
-    Allows doctors can add diet for patients.
-    example : {
-                "patient": 1,
-                "diet": {
-                    "breakfast": {
-                    "meal_portions": [1, 2]
-                    },
-                    "lunch": {
-                    "meal_portions": [3, 4]
-                    }
-                },
-                "dates": ["2025-03-21", "2025-03-22"]
-            }
+    Allows doctors to create and retrieve diet plans for patients.
+    
+    example :
+    
+            {
+              "patient": 1,
+              "diet": {        
+                        "breakfast":  {
+                        "meal_portions": [1, 2]
+                        },
+                        "lunch":  {  
+                        "meal_portions": [3, 4]
+                        }   
+                        },
+              "dates": ["2025-03-21", "2025-03-22"]
+            }    
     """
-    queryset = DietPlan.objects.all()
-    serializer_class = DietPlanSerializer
-    permission_classes = [IsAuthenticated]
+    queryset = DietPlan.objects.none()
+    permission_classes = [PermissionsManager]
+    serializer_class = DietPlanCreateSerializer
+    filter_backends = [filters.SearchFilter]
+    search_fields = ["patient__username"]
+    codename = 'dietplan'
+
+    def get_queryset(self):
+        qs = DietPlan.objects.filter(doctor=self.request.user).prefetch_related(
+            "meals__meal_portions",
+            "diet_dates",
+            "patient"
+        )
+        return qs
+
+    def get_serializer_class(self):
+        if self.action in ['list', 'retrieve']:
+            return DietPlanReadSerializer
+        return DietPlanCreateSerializer
 
     def perform_create(self, serializer):
-        user = self.request.user  
-        serializer.save(doctor=user)
+        serializer.save(doctor=self.request.user)
 
 class ReviewHealthStatusView(APIView):
     """

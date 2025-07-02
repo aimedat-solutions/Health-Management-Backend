@@ -1,7 +1,13 @@
 from django_filters import rest_framework as filters
-from .models import CustomUser, DietPlan, LabReport,Exercise,RoleChoices
+from .models import CustomUser, DietPlan, LabReport,Exercise,RoleChoices,PatientDietQuestion,DietPlanDate
 import django_filters
 
+class DietPlanMealFilter(filters.FilterSet):
+    date = filters.DateFilter(field_name="date", lookup_expr="exact")
+
+    class Meta:
+        model = DietPlanDate
+        fields = ['date']
 class DietPlanFilter(filters.FilterSet):
     """
     Filter set for DietPlan model.
@@ -49,3 +55,10 @@ class ExerciseFilter(filters.FilterSet):
     class Meta:
         model = Exercise
         fields = ['exercise_name', 'type', 'date', 'date_range', 'patient_name']
+        
+class DietQuestionFilter(filters.FilterSet):
+    date = filters.DateFilter(field_name='last_diet_update')
+
+    class Meta:
+        model = PatientDietQuestion
+        fields = ['date']

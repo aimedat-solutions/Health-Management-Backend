@@ -36,39 +36,66 @@ class MealPortionSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 class DietPlanMealSerializer(serializers.ModelSerializer):
-    meal_portions = serializers.PrimaryKeyRelatedField(queryset=MealPortion.objects.all(), many=True)
+    portions = MealPortionSerializer(source="meal_portions", many=True)
+    time_range = serializers.SerializerMethodField()
 
     class Meta:
         model = DietPlanMeal
-        fields = "__all__"
+        fields = ["id", "meal_type", "time_range", "portions"]
 
+    def get_time_range(self, obj):
+        if obj.start_time and obj.end_time:
+            try:
+                return f"{obj.start_time.strftime('%I %p')} – {obj.end_time.strftime('%I %p')}"
+            except:
+                return None
+        return None
 class DietPlanDateSerializer(serializers.ModelSerializer):
     class Meta:
         model = DietPlanDate
         fields = "__all__"
 
-class DietPlanSerializer(serializers.ModelSerializer):
+class DietPlanCreateSerializer(serializers.ModelSerializer):
     diet = serializers.DictField(write_only=True)
     dates = serializers.ListField(child=serializers.DateField(), write_only=True)
 
     class Meta:
         model = DietPlan
-        fields = ["id", "patient",  "diet", "dates"]
+        fields = ["id", "patient", "diet", "dates"]
 
     def create(self, validated_data):
-        diet_data = validated_data.pop("diet")  
+        diet_data = validated_data.pop("diet")
         dates_data = validated_data.pop("dates")
 
         diet_plan = DietPlan.objects.create(**validated_data)
 
-        # Creating meals
         for meal_type, meal_details in diet_data.items():
             meal_portions = meal_details.get("meal_portions", [])
-            meal_instance = DietPlanMeal.objects.create(diet_plan=diet_plan, meal_type=meal_type)
+            start_time = meal_details.get("start_time")  
+            end_time = meal_details.get("end_time")      
+
+            meal_instance = DietPlanMeal.objects.create(
+                diet_plan=diet_plan,
+                meal_type=meal_type,
+                start_time=start_time,
+                end_time=end_time
+            )
             meal_instance.meal_portions.set(meal_portions)
 
-        # Process each date
         for date in dates_data:
             DietPlanDate.objects.create(diet_plan=diet_plan, date=date)
 
         return diet_plan
+
+
+class DietPlanReadSerializer(serializers.ModelSerializer):
+    meals = DietPlanMealSerializer(many=True, read_only=True)
+    dates = serializers.SerializerMethodField()
+    patient_name = serializers.CharField(source="patient.first_name", read_only=True)
+
+    class Meta:
+        model = DietPlan
+        fields = ["id", "patient", "patient_name", "dates", "meals"]
+
+    def get_dates(self, obj):
+        return [date.date for date in obj.diet_dates.all()]

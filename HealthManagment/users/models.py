@@ -71,7 +71,7 @@ class CustomUser(AbstractUser, AuditModel):
     REQUIRED_FIELDS = ['role', 'phone_number']
     
     def __str__(self):
-        return f"{self.role} . {self.username}"
+        return f"{self.role} . {self.phone_number}"
     
     def is_doctor(self):
         return self.role == RoleChoices.DOCTOR
@@ -346,12 +346,14 @@ class DietPlanMeal(models.Model):
         LUNCH = "lunch", "Lunch"
         DINNER = "dinner", "Dinner"
         SNACKS = "snacks", "Snacks"
-    diet_plan = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="meals")
+    diet_plan = models.ForeignKey(DietPlan, on_delete=models.CASCADE, related_name="meals")
     meal_type = models.CharField(max_length=20, choices=MealType.choices)  
     meal_portions = models.ManyToManyField(MealPortion)
-
+    start_time = models.TimeField(null=True, blank=True, help_text="Start of meal window")
+    end_time = models.TimeField(null=True, blank=True, help_text="End of meal window")
+    
     def __str__(self):
-        return f"{self.meal_type} for {self.diet_plan.username}"
+        return f"{self.meal_type} ({self.start_time}-{self.end_time}) for {self.diet_plan.patient.username}"
     
 class DietPlanStatus(AuditModel):
     """
@@ -365,21 +367,23 @@ class DietPlanStatus(AuditModel):
 
     patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="diet_statuses")
     diet_plan = models.ForeignKey(DietPlanMeal, on_delete=models.CASCADE, related_name="status_entries")
+    date = models.DateField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
     reason_audio = models.BinaryField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ("patient", "diet_plan")
+        unique_together = ("patient", "diet_plan", "date")
 
     def __str__(self):
-        return f"{self.patient.first_name} - {self.diet_plan.MealType}: {self.status}"
+        return f"{self.patient.username} - {self.diet_plan.meal_type} on {self.date}: {self.status}"
    
 class PatientDietQuestion(AuditModel):
     """
     Tracks dietary habits of a patient.
     """
-    patient = models.OneToOneField(CustomUser, on_delete=models.CASCADE, limit_choices_to={'role': 'patient'})
+    patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, limit_choices_to={'role': 'patient'})
+    date = models.DateField(default=timezone.now)
     breakfast = models.TextField(null=True, blank=True)
     lunch = models.TextField(null=True, blank=True)
     eveningSnack = models.TextField(null=True, blank=True)
@@ -387,12 +391,18 @@ class PatientDietQuestion(AuditModel):
     mms = models.CharField(max_length=10, null=True, blank=True)
     preBreakfast = models.TextField(null=True, blank=True)
     last_diet_update = models.DateField(auto_now=True)
+    
+    class Meta:
+        unique_together = ("patient", "date")
 
     def __str__(self):
         return f"Diet question for {self.patient.username} on {self.last_diet_update}"
     
     def is_due_for_update(self):
-        return self.last_diet_update and timezone.now().date() >= self.last_diet_update + timedelta(days=int(settings.DIET_QUESTION_ADD_DAYS))
+        last_entry = PatientDietQuestion.objects.filter(patient=self.patient).order_by('-date').first()
+        if not last_entry:
+            return True
+        return timezone.now().date() >= last_entry.date + timedelta(days=int(settings.DIET_QUESTION_ADD_DAYS))
     
 
 ######################################################################## LabReport Model ################################################################################################
