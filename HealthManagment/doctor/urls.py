@@ -16,7 +16,7 @@ app_name = 'doctor'
 
 
 router = DefaultRouter()
-router.register(r"dietplans", DietPlanViewSet)
+router.register(r"dietplans", DietPlanViewSet, basename='dietplan')
 
 labreport_list = LabReportViewSet.as_view({"get": "list"})
 

@@ -1,6 +1,6 @@
 from rest_framework import generics, permissions
-from .models import Profile, Question,DietPlan,Exercise, CustomUser,Option,PatientResponse, DietPlanStatus,DoctorExerciseResponse,HealthStatus
-from .serializers import ExerciseSerializer, ProfileSerializer, DietPlanSerializer, DoctorRegistrationSerializer, QuestionSerializer,QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,PhoneNumberSerializer,LabReportSerializer
+from .models import Profile, Question,DietPlan,Exercise, CustomUser,Option,PatientResponse, Exercise,ExerciseDate,HealthStatus
+from .serializers import ExerciseSerializer, ProfileSerializer, ExerciseDateSerializer, DoctorRegistrationSerializer, QuestionSerializer,QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,PhoneNumberSerializer,LabReportSerializer
 from django.db.models import Count,Avg
 from django.contrib.auth.models import Group
 from rest_framework import views, status
@@ -152,7 +152,7 @@ class SendOrResendSMSAPIView(GenericAPIView):
     def post(self, request):
         phone_number = request.data.get("phone_number", None)
         environment = os.getenv('DJANGO_ENV', 'development')
-
+        
         if phone_number:
             try:
                 user = CustomUser.objects.get(phone_number=phone_number)
@@ -194,21 +194,25 @@ class ProfileAPIView(APIView):
     permission_classes = [PermissionsManager]
     serializer_class = ProfileSerializer
     codename = 'profile'
-
+    
+    def get_object(self):
+        profile, _ = Profile.objects.get_or_create(user=self.request.user)
+        return profile
+    
     def get(self, request):
         """
         Retrieve the profile of the logged-in user.
         """ 
         profile, created = Profile.objects.get_or_create(user=request.user)  # Auto-create if missing
-        serializer = ProfileSerializer(profile)
+        serializer = ProfileSerializer(profile, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def put(self, request):
         """
         Update the profile of the logged-in user.
         """
-        profile, _ = Profile.objects.get_or_create(user=request.user)  # Ensure a profile exists
-        serializer = ProfileSerializer(profile, data=request.data, partial=True)
+        profile = self.get_object()
+        serializer = ProfileSerializer(profile, data=request.data, partial=True)  # allows partial updates
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
@@ -260,10 +264,11 @@ class DoctorDetailView(generics.RetrieveUpdateDestroyAPIView):
  
     
 class DoctorRegistrationAPIView(APIView):
-    permission_classes = [PermissionsManager]
+    # permission_classes = [PermissionsManager]
     serializer_class = DoctorRegistrationSerializer
-    codename = 'user'
+    # codename = 'user'
     def post(self, request):
+        print(request.data)
         serializer = DoctorRegistrationSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
@@ -309,7 +314,24 @@ class ExerciseListCreateView(generics.ListCreateAPIView):
     permission_classes = [PermissionsManager]
     filter_backends = [DjangoFilterBackend]
     filterset_class = ExerciseFilter
+    serch_field = ['date ']
     codename = 'exercise'
+    
+    # def get_queryset(self):
+    #     return ExerciseDate.objects.filter(
+    #         exercise__user=self.request.user
+    #     ).select_related("exercise").order_by("date")
+    
+    # def get_serializer_context(self):
+    #     context = super().get_serializer_context()
+    #     date_str = self.request.query_params.get("date")
+    #     if date_str:
+    #         from datetime import datetime
+    #         try:
+    #             context["target_date"] = datetime.strptime(date_str, "%Y-%m-%d").date()
+    #         except ValueError:
+    #             pass
+    #     return context
 
 class ExerciseDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Exercise.objects.all()

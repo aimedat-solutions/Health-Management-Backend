@@ -1,7 +1,7 @@
 from rest_framework import serializers
-from users.models import DietPlan, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, DietPlanStatus, ExerciseStatus
+from users.models import DietPlan, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, DietPlanStatus, ExerciseStatus,DietPlanMeal,DietPlanDate
 from users.serializers import OptionSerializer
-
+from django.utils import timezone
 class EmptyLabReportSerializer(serializers.Serializer):
     message = serializers.SerializerMethodField()
 
@@ -12,7 +12,7 @@ class DietPlanStatusSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DietPlanStatus
-        fields = ['status', 'reason_audio', 'diet_plan' ]
+        fields = ['status', 'date', 'reason_audio', 'diet_plan']
 
     def create(self, validated_data):
         """Convert audio file to binary before saving"""
@@ -30,16 +30,64 @@ class DietPlanStatusSerializer(serializers.ModelSerializer):
             return base64.b64encode(obj.reason_audio).decode('utf-8')
         return None
 
-class DietPlanSerializer(serializers.ModelSerializer):
+class DietPlanMealSerializer(serializers.ModelSerializer):
+    portions = serializers.SerializerMethodField()
+    time_range = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
     class Meta:
-        model = DietPlan
-        fields = '__all__'
-        
+        model = DietPlanMeal
+        fields = ['id','meal_type', 'time_range', 'portions', 'status']
+
+    def get_portions(self, obj):
+        return [p.name for p in obj.meal_portions.all()]
+    
+    def get_time_range(self, obj):
+        if obj.start_time and obj.end_time:
+            try:
+                return f"{obj.start_time.strftime('%#I %p')} – {obj.end_time.strftime('%#I %p')}"
+            except:
+                return f"{obj.start_time.strftime('%H:%M')} – {obj.end_time.strftime('%H:%M')}"
+        return None
     def get_status(self, obj):
-        """Retrieve the latest diet plan status for the patient"""
-        status_entry = obj.status_entries.order_by('-updated_at').first()
-        return DietPlanStatusSerializer(status_entry).data if status_entry else None
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        date = self.context.get("target_date", timezone.now().date())
+
+        if user and user.is_authenticated:
+            status_obj = DietPlanStatus.objects.filter(
+                patient=user,
+                diet_plan=obj,   # obj is DietPlanMeal
+                date=date
+            ).first()
+
+            return status_obj.status if status_obj else "pending"
+
+        return "pending"
+    
+class DietPlanSerializer(serializers.ModelSerializer):
+    meals = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DietPlanDate
+        fields = ['date', 'meals']
+
+    def get_meals(self, obj):
+        MEAL_ORDER = ['breakfast', 'lunch', 'snacks', 'dinner']
+        all_meals = obj.diet_plan.meals.all()
+        meals_map = {meal.meal_type: meal for meal in all_meals}
+
+        sorted_meals = [
+            meals_map[meal_type]
+            for meal_type in MEAL_ORDER
+            if meal_type in meals_map
+        ]
+
+        return DietPlanMealSerializer(
+            sorted_meals,
+            many=True,
+            context={**self.context, "target_date": obj.date}
+        ).data
+
     
 class LabReportSerializer(serializers.ModelSerializer):
     message = serializers.SerializerMethodField()
