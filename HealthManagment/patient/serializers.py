@@ -107,7 +107,7 @@ class QuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Question
         fields = [
-            "id", "question_text", "category", "type", "placeholder", "max_length",
+            "id", "question_image", "question_text", "category", "type", "placeholder", "max_length",
             "created_at", "updated_at", "created_by", "updated_by", "options"
         ]
 class PatientResponseSerializer(serializers.ModelSerializer):

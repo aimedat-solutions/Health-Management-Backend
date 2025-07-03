@@ -153,35 +153,32 @@ class CustomUser(AbstractUser, AuditModel):
         
 
 ######################################################################## Excercise Model ################################################################################################
-
-
 class Exercise(AuditModel):
     """
     Stores information about different exercises performed by a patient user.
     """
-    class ExerciseType(models.TextChoices):
-        STRENGTH = 'strength', 'Strength Training'
-        CARDIO = 'cardio', 'Cardio'
-        FLEXIBILITY = 'flexibility', 'Flexibility'
-        BALANCE = 'balance', 'Balance'
-
-    class IntensityLevel(models.TextChoices):
-        LOW = 'low', 'Low'
-        MEDIUM = 'medium', 'Medium'
-        HIGH = 'high', 'High'
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='exercises')
-    exercise_name = models.CharField(max_length=255)
-    type = models.CharField(max_length=50, choices=ExerciseType.choices)
-    duration = models.DurationField()  # e.g., how long they did the exercise
-    intensity = models.CharField(max_length=50, choices=IntensityLevel.choices)
-    calories_burned = models.PositiveIntegerField()
-    date = models.DateField()
-    video_content = models.FileField(upload_to='exercise_videos/', null=True, blank=True)
+    title = models.CharField(max_length=255)
+    description = models.TextField()
     image_content = models.ImageField(upload_to='exercise_images/', null=True, blank=True)
+    video_content = models.FileField(upload_to='exercise_videos/', null=True, blank=True)
+    date = models.DateField()
 
     def __str__(self):
-        return f"{self.exercise_name} by {self.user.username}"
+        return f"{self.title} by {self.user.username} at {self.date}"
 
+class ExerciseDate(AuditModel):
+    """
+    Tracks assigned dates for diet plans.
+    """
+    exercise = models.ForeignKey(Exercise, on_delete=models.CASCADE, related_name="diet_dates")
+    date = models.DateField()
+
+    class Meta:
+        unique_together = ("exercise", "date")  
+
+    def __str__(self):
+        return f"{self.exercise.title} - {self.date}"
 class ExerciseStatus(AuditModel):
     """
     Tracks the status of exercises completed, skipped, or pending.
@@ -202,7 +199,7 @@ class ExerciseStatus(AuditModel):
         unique_together = ("user", "exercise")
 
     def __str__(self):
-        return f"{self.user.username} - {self.exercise.exercise_name}: {self.status}"
+        return f"{self.user.username} - {self.exercise.title}: {self.status}"
     
 class DoctorExerciseResponse(AuditModel):
     """
@@ -231,6 +228,7 @@ class Question(AuditModel):
         ('checkbox', 'Checkbox'),
         ('description', 'Description'),
     ]
+    question_image = models.ImageField(upload_to='questions_images/', null=True, blank=True)
     question_text = models.CharField(max_length=255)
     category = models.CharField(max_length=10, choices=QUESTION_CATEGORIES)
     type = models.CharField(max_length=20, choices=QUESTION_TYPES, null=True, blank=True)
