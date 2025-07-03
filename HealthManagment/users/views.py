@@ -1,6 +1,6 @@
 from rest_framework import generics, permissions
-from .models import Profile, Question,DietPlan,Exercise, CustomUser,Option,PatientResponse, DietPlanStatus,DoctorExerciseResponse,HealthStatus
-from .serializers import ExerciseSerializer, ProfileSerializer, DietPlanSerializer, DoctorRegistrationSerializer, QuestionSerializer,QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,PhoneNumberSerializer,LabReportSerializer
+from .models import Profile, Question,DietPlan,Exercise, CustomUser,Option,PatientResponse, Exercise,ExerciseDate,HealthStatus
+from .serializers import ExerciseSerializer, ProfileSerializer, ExerciseDateSerializer, DoctorRegistrationSerializer, QuestionSerializer,QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,PhoneNumberSerializer,LabReportSerializer
 from django.db.models import Count,Avg
 from django.contrib.auth.models import Group
 from rest_framework import views, status
@@ -314,7 +314,24 @@ class ExerciseListCreateView(generics.ListCreateAPIView):
     permission_classes = [PermissionsManager]
     filter_backends = [DjangoFilterBackend]
     filterset_class = ExerciseFilter
+    serch_field = ['date ']
     codename = 'exercise'
+    
+    # def get_queryset(self):
+    #     return ExerciseDate.objects.filter(
+    #         exercise__user=self.request.user
+    #     ).select_related("exercise").order_by("date")
+    
+    # def get_serializer_context(self):
+    #     context = super().get_serializer_context()
+    #     date_str = self.request.query_params.get("date")
+    #     if date_str:
+    #         from datetime import datetime
+    #         try:
+    #             context["target_date"] = datetime.strptime(date_str, "%Y-%m-%d").date()
+    #         except ValueError:
+    #             pass
+    #     return context
 
 class ExerciseDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Exercise.objects.all()

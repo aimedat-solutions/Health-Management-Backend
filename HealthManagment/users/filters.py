@@ -1,5 +1,5 @@
 from django_filters import rest_framework as filters
-from .models import CustomUser, DietPlan, LabReport,Exercise,RoleChoices,PatientDietQuestion,DietPlanDate
+from .models import CustomUser, DietPlan, LabReport,Exercise,RoleChoices,PatientDietQuestion,DietPlanDate,ExerciseDate
 import django_filters
 
 class DietPlanMealFilter(filters.FilterSet):
@@ -45,16 +45,19 @@ class CustomUserFilter(filters.FilterSet):
         model = CustomUser
         fields = ['role', 'email', 'first_name', 'last_name']
 
+class DietPlanMealFilter(filters.FilterSet):
+    date = filters.DateFilter(field_name="date", lookup_expr="exact")
 
+    class Meta:
+        model = DietPlanDate
+        fields = ['date']
 class ExerciseFilter(filters.FilterSet):
-    patient_name = filters.CharFilter(field_name="user__username", lookup_expr='icontains')
-    date = filters.DateFilter(field_name="date")
-    date_range = filters.DateFromToRangeFilter(field_name="date")
-    
+    patient_name = filters.CharFilter(field_name="user__First_name", lookup_expr='icontains')
+    date = filters.DateFilter(field_name="date", lookup_expr="exact")
 
     class Meta:
         model = Exercise
-        fields = ['exercise_name', 'type', 'date', 'date_range', 'patient_name']
+        fields = ['title', 'id', 'description', 'date', 'patient_name']
         
 class DietQuestionFilter(filters.FilterSet):
     date = filters.DateFilter(field_name='last_diet_update')

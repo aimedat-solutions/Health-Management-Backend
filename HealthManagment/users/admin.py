@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
     CustomUser, Profile, Exercise, DoctorExerciseResponse, Question, PatientDietQuestion,
-    Option, DietPlanMeal, PatientResponse, LabReport, HealthStatus,MealPortion,DietPlan,DietPlanDate
+    Option, DietPlanMeal, PatientResponse, LabReport, HealthStatus,MealPortion,DietPlan,DietPlanDate,ExerciseDate
 )
 
 admin.site.site_header = "MHealth Admin"
@@ -11,6 +11,7 @@ admin.site.index_title = "Welcome to MHealth Management Dashboard"
 admin.site.register(CustomUser)
 admin.site.register(Profile)
 admin.site.register(Exercise)
+admin.site.register(ExerciseDate)
 admin.site.register(DoctorExerciseResponse)
 admin.site.register(Question)
 admin.site.register(Option)

@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from phonenumber_field.serializerfields import PhoneNumberField
 from django.contrib.auth.models import Group, Permission
 from .utils import send_otp, verify_otp
-from .models import  Question, Profile,DietPlan,Exercise, CustomUser, Option, PatientResponse,LabReport,DietPlanStatus
+from .models import  Question, Profile,DietPlan,Exercise, CustomUser, Option, PatientResponse,LabReport,DietPlanStatus,ExerciseDate
 import re,os
 from django.utils.text import slugify
 from rest_framework.exceptions import ValidationError
@@ -229,18 +229,21 @@ class DietPlanSerializer(serializers.ModelSerializer):
             return status.status if status else "pending"
         return "pending"
 
-
+class ExerciseDateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExerciseDate
+        fields = '__all__'
+        
 class ExerciseSerializer(serializers.ModelSerializer):
+    date = ExerciseDateSerializer
     class Meta:
         model = Exercise
         fields = [
-            'id', 'user', 'exercise_name', 'type', 'duration', 'image_content', 'video_content',
-            'intensity', 'calories_burned', 'date', "created_at", "created_by", "updated_at", "updated_by"
+            'id', 'user', 'title', 'image_content', 'description', 'video_content',
+            'date', "created_at", "created_by", "updated_at", "updated_by"
         ]
         read_only_fields = ['user', 'created_at', 'updated_at']
-
-
-
+        
 class OptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Option
