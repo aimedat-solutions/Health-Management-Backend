@@ -1,18 +1,18 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from users.models import DietPlan, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, Option, DietPlanStatus,Exercise,ExerciseStatus,HealthStatus
+from users.models import DietPlan, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, Option, DietPlanStatus,Exercise,ExerciseStatus,HealthStatus,DietPlanDate,DietPlanMeal
 from .serializers import PatientResponseSerializer,EmptyLabReportSerializer, HealthStatusSerializer, LabReportSerializer, QuestionSerializer, DietQuestionSerializer, DietPlanSerializer, DietPlanStatusSerializer, BulkPatientResponseSerializer,ExerciseStatusSerializer
 from users.permissions import PermissionsManager,IsDoctorUser,IsPatientUser
 from rest_framework import viewsets, permissions,generics,status
 from rest_framework.parsers import MultiPartParser, FormParser
-from users.serializers import QuestionCreateSerializer
+from users.filters import DietQuestionFilter,DietPlanMealFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from users.filters import LabReportFilter
 from rest_framework.filters import OrderingFilter
 from rest_framework.viewsets import ModelViewSet
 from django.utils import timezone
-from datetime import timedelta
+from datetime import timedelta,datetime
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 
@@ -217,12 +217,17 @@ class InitialQuestionsView(generics.ListAPIView):
         # If initial questions answered → Show diet questions
         return Question.objects.filter(category="diet")
 
-class DietQuestionsView(APIView):
+class DietQuestionsView(generics.ListCreateAPIView):
     permission_classes = [PermissionsManager]
     serializer_class = DietQuestionSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = DietQuestionFilter
     queryset = PatientDietQuestion.objects.all()
     codename = 'patientdietquestion'
-
+    
+    def get_queryset(self):
+        return PatientDietQuestion.objects.filter(patient=self.request.user)
+    
     def get(self, request):
         """
         Retrieve the latest diet details for the patient.
@@ -231,8 +236,8 @@ class DietQuestionsView(APIView):
 
         if user.role != "patient":
             return Response({"message": "Only patients can access diet questions."}, status=status.HTTP_403_FORBIDDEN)
-        
-        last_diet = PatientDietQuestion.objects.filter(patient=user).order_by('-last_diet_update').first()
+        queryset = self.filter_queryset(self.get_queryset())
+        last_diet = queryset.order_by('-last_diet_update').first()
         
         if not last_diet:
             return Response(
@@ -316,17 +321,31 @@ class DietQuestionsView(APIView):
             status=status.HTTP_201_CREATED
         )
 
-class DietPlanView(APIView):
+class DietPlanView(generics.ListAPIView):
     serializer_class = DietPlanSerializer
     permission_classes = [PermissionsManager]
-    codename = 'dietplan'
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = DietPlanMealFilter
+    serch_field = ['date ']
+    codename = 'dietplanmeal'
+
+    def get_queryset(self):
+        return DietPlanDate.objects.filter(
+            diet_plan__patient=self.request.user
+        ).select_related("diet_plan").prefetch_related(
+            "diet_plan__meals__meal_portions"
+        ).order_by("date")
     
-    def get(self, request):
-        """Get diet plans for the logged-in patient"""
-        user = request.user
-        plans = DietPlan.objects.filter(patient=user)
-        serializer = DietPlanSerializer(plans, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        date_str = self.request.query_params.get("date")
+        if date_str:
+            from datetime import datetime
+            try:
+                context["target_date"] = datetime.strptime(date_str, "%Y-%m-%d").date()
+            except ValueError:
+                pass
+        return context
     
 class CompleteSkipDietPlanView(APIView):
     serializer_class = DietPlanStatusSerializer
@@ -334,32 +353,53 @@ class CompleteSkipDietPlanView(APIView):
     codename = 'dietplanstatus'
     
     def post(self, request):
-        """Mark diet plan as skipped"""
-        patient_id = request.user.id 
-        diet_plan_id = request.data.get("diet_plan")
-        new_status = request.data.get("status", "skipped")  
+        print(request.data)
+        """Update diet plan meal status for a specific assigned date"""
+        patient = request.user
+        diet_plan_meal_id = request.data.get("diet_plan")
+        new_status = request.data.get("status")
+        date_str = request.data.get("date")
         audio_file = request.FILES.get("audio_reason")
 
-        if not new_status or not diet_plan_id:
+        if not all([diet_plan_meal_id, new_status, date_str]):
             return Response(
-                {"error": "Both 'diet_plan' and 'status' are required"},
+                {"error": "Fields 'diet_plan', 'status', and 'date' are required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        diet_plan = get_object_or_404(DietPlan, id=diet_plan_id)
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=400)
 
-        audio_data = None
-        if new_status == "skipped" and audio_file:
-            audio_data = audio_file.read()
-            
-        status_entry, created = DietPlanStatus.objects.update_or_create(
-            patient_id=patient_id,
-            diet_plan=diet_plan,
-            defaults={"status": new_status, "audio_reason": audio_data}
+        meal = get_object_or_404(DietPlanMeal, id=diet_plan_meal_id)
+
+        is_assigned = DietPlanDate.objects.filter(
+            diet_plan=meal.diet_plan,
+            date=target_date,
+            diet_plan__patient=patient
+        ).exists()
+
+        if not is_assigned:
+            return Response(
+                {"error": "This meal is not assigned to you on the given date."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        audio_data = audio_file.read() if new_status == "skipped" and audio_file else None
+
+        status_entry, _ = DietPlanStatus.objects.update_or_create(
+            patient=patient,
+            diet_plan=meal,
+            date=target_date,
+            defaults={
+                "status": new_status,
+                "reason_audio": audio_data
+            }
         )
+
         serializer = DietPlanStatusSerializer(status_entry)
-        
-        return Response(data=serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 class CompleteSkipExerciseView(APIView):
     serializer_class = ExerciseStatusSerializer

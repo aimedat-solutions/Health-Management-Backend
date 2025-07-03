@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from phonenumber_field.serializerfields import PhoneNumberField
 from django.contrib.auth.models import Group, Permission
 from .utils import send_otp, verify_otp
-from .models import  Question, Profile,DietPlan,Exercise, CustomUser, Option, PatientResponse,LabReport,DietPlanStatus
+from .models import  Question, Profile,DietPlan,Exercise, CustomUser, Option, PatientResponse,LabReport,DietPlanStatus,ExerciseDate
 import re,os
 from django.utils.text import slugify
 from rest_framework.exceptions import ValidationError
@@ -130,15 +130,34 @@ class CustomUserSerializer(serializers.ModelSerializer):
 class ProfileSerializer(serializers.ModelSerializer):
     role = serializers.CharField(source='user.role', read_only=True)
     phone_number = serializers.CharField(source='user.phone_number', read_only=True)
+    profile_image = serializers.SerializerMethodField()
     class Meta:
         model = Profile
         fields = [
             'id', 'first_name', 'last_name', 'date_of_birth', 'age', 'gender',
-            'address', 'specialization', 'profile_image', 'calories', 
+            'address', 'specialization', 'profile_image', 'month', 
             'height', 'weight', 'role', 'phone_number', 
         ]
         
-    
+    def get_profile_image(self, obj):
+        request = self.context.get('request')
+        if obj.profile_image:
+            url = obj.profile_image.url
+            # Make absolute for local development
+            if request is not None:
+                return request.build_absolute_uri(url)
+            return url
+        return None    
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request', None)
+
+        if request and hasattr(request, 'user') and request.user.is_authenticated:
+            if request.user.role != 'doctor':
+                data.pop('specialization', None)
+        else:
+            data.pop('specialization', None)
+        return data
 class DoctorRegistrationSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
@@ -147,29 +166,48 @@ class DoctorRegistrationSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         phone_number = validated_data.get('phone_number')
+        environment = os.getenv('DJANGO_ENV', 'development')
 
+        print(phone_number)
         try:
             user = CustomUser.objects.get(phone_number=phone_number)
-            send_otp(phone_number)
+            print(user)
+            if environment in ['production', 'staging']:
+                send_otp(phone_number)
+                self.context['otp_sent'] = True
+            else:
+                self.context['otp_sent'] = False
+
             return user
+
         except CustomUser.DoesNotExist:
+            # Registration flow
             validated_data['role'] = 'doctor'
             base_username = slugify(phone_number)
             username = base_username
-            num_suffix = 1
+            suffix = 1
             while CustomUser.objects.filter(username=username).exists():
-                username = f"{base_username}_{num_suffix}"
-                num_suffix += 1
-            
+                username = f"{base_username}_{suffix}"
+                suffix += 1
+
             validated_data['username'] = username
             validated_data['password'] = CustomUser.objects.make_random_password()
-            group = Group.objects.get(name=validated_data['role'])
             user = CustomUser.objects.create(**validated_data)
-            
-            profile, created = Profile.objects.get_or_create(user=user)
-            user.groups.add(group)
-            user.save()
-            send_otp(phone_number)
+
+            # Assign to doctor group
+            doctor_group = Group.objects.get(name='doctor')
+            user.groups.add(doctor_group)
+
+            # Create profile if not exists
+            Profile.objects.get_or_create(user=user)
+
+            # Send OTP in allowed envs
+            if environment in ['production', 'staging']:
+                send_otp(phone_number)
+                self.context['otp_sent'] = True
+            else:
+                self.context['otp_sent'] = False
+
             return user
         
 class DietPlanStatusSerializer(serializers.ModelSerializer):
@@ -191,18 +229,21 @@ class DietPlanSerializer(serializers.ModelSerializer):
             return status.status if status else "pending"
         return "pending"
 
-
+class ExerciseDateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExerciseDate
+        fields = '__all__'
+        
 class ExerciseSerializer(serializers.ModelSerializer):
+    date = ExerciseDateSerializer
     class Meta:
         model = Exercise
         fields = [
-            'id', 'user', 'exercise_name', 'type', 'duration', 'image_content', 'video_content',
-            'intensity', 'calories_burned', 'date', "created_at", "created_by", "updated_at", "updated_by"
+            'id', 'user', 'title', 'image_content', 'description', 'video_content',
+            'date', "created_at", "created_by", "updated_at", "updated_by"
         ]
         read_only_fields = ['user', 'created_at', 'updated_at']
-
-
-
+        
 class OptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Option
