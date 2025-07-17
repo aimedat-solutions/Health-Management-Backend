@@ -2,11 +2,12 @@ from rest_framework import serializers
 from users.models import DietPlan, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, DietPlanStatus, ExerciseStatus,DietPlanMeal,DietPlanDate
 from users.serializers import OptionSerializer
 from django.utils import timezone
+import datetime
 class EmptyLabReportSerializer(serializers.Serializer):
     message = serializers.SerializerMethodField()
 
     def get_message(self, obj):
-        return "This patient does not have any lab report until now."
+        return "Patients are does not have any lab report until now."
 class DietPlanStatusSerializer(serializers.ModelSerializer):
     reason_audio = serializers.FileField(required=False)
 
@@ -133,6 +134,8 @@ class BulkPatientResponseSerializer(serializers.Serializer):
         return data      
 class DietQuestionSerializer(serializers.ModelSerializer):
     ask_diet_question = serializers.SerializerMethodField()
+    last_diet_update = serializers.SerializerMethodField()
+    date = serializers.SerializerMethodField()
     
     class Meta:
         model = PatientDietQuestion
@@ -141,6 +144,15 @@ class DietQuestionSerializer(serializers.ModelSerializer):
     def get_ask_diet_question(self, obj):
         return obj.patient.ask_diet_question
     
+    def get_last_diet_update(self, obj):
+        if obj.last_diet_update:
+            return obj.last_diet_update.date().isoformat() if hasattr(obj.last_diet_update, 'date') else obj.last_diet_update
+        return None
+
+    def get_date(self, obj):
+        if obj.date:
+            return obj.date.date().isoformat() if hasattr(obj.date, 'date') else obj.date
+        return None
 class ExerciseStatusSerializer(serializers.ModelSerializer):
     reason_audio = serializers.FileField(required=False)
 

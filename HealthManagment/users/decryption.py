@@ -1,5 +1,5 @@
-from Cryptodome import Random
-from Cryptodome.Cipher import AES
+from Crypto import Random
+from Crypto.Cipher import AES
 import base64
 from hashlib import md5
 from django.conf import settings
