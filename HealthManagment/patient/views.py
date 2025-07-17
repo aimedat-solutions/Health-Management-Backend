@@ -17,7 +17,7 @@ from django.conf import settings
 from django.shortcuts import get_object_or_404
 
 class LabReportViewSet(viewsets.ModelViewSet):
-    permission_classes = [PermissionsManager,IsPatientUser]
+    permission_classes = [PermissionsManager]
     queryset = LabReport.objects.all()
     serializer_class = LabReportSerializer
     codename = 'labreport'
@@ -26,14 +26,14 @@ class LabReportViewSet(viewsets.ModelViewSet):
     ordering_fields = ['date_of_report']  
     ordering = ['-date_of_report']  
 
-    # def get_queryset(self):
-        # user = self.request.user
-        # # Ensure user is authenticated
-        # if user.is_authenticated:
-        #     if user.groups.filter(name='doctor').exists():  # Check if the user has the 'doctor' role
-        #         return LabReport.objects.all()
-        #     return LabReport.objects.filter(patient=user)
-        # return LabReport.objects.none()  # If the user is not authenticated, return no reports
+    def get_queryset(self):
+        user = self.request.user
+        # Ensure user is authenticated
+        if user.is_authenticated:
+            if user.groups.filter(name='doctor').exists():  # Check if the user has the 'doctor' role
+                return LabReport.objects.all()
+            return LabReport.objects.filter(patient=user)
+        return LabReport.objects.none()  # If the user is not authenticated, return no reports
     
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
@@ -301,11 +301,10 @@ class DietQuestionsView(generics.ListCreateAPIView):
             return Response({"message": "Diet details already submitted recently."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Update diet details
-        diet_fields = ["breakfast", "lunch", "eveningSnack", "dinner", "mms", "preBreakfast"]
+        diet_fields = ["date", "breakfast", "lunch", "eveningSnack", "dinner", "mms", "preBreakfast"]
         for field in diet_fields:
             setattr(patient_diet, field, request.data.get(field, getattr(patient_diet, field)))
 
-        patient_diet.last_diet_update = timezone.now()
         patient_diet.save()
 
         # Set flag to False after submission

@@ -134,7 +134,7 @@ class ReviewHealthStatusView(APIView):
             health_status = {
                 'patient_id': patient.id,
                 'username': patient.username,
-                'diet_plans': patient.received_diet_plans.count(),
+                'diet_plans': patient.assigned_diets.count(),
                 'lab_reports': patient.lab_reports.count(),
             }
             data.append(health_status)

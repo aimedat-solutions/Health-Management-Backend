@@ -168,7 +168,6 @@ class DoctorRegistrationSerializer(serializers.ModelSerializer):
         phone_number = validated_data.get('phone_number')
         environment = os.getenv('DJANGO_ENV', 'development')
 
-        print(phone_number)
         try:
             user = CustomUser.objects.get(phone_number=phone_number)
             print(user)
