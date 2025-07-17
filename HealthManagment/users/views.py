@@ -19,8 +19,8 @@ from django.core.exceptions import ObjectDoesNotExist
 from drf_spectacular.utils import extend_schema
 from users.permissions import PermissionsManager,IsSuperAdmin, IsAdmin
 from rest_framework import viewsets
-from rest_framework import serializers
-from rest_framework import generics
+from django.contrib.auth.hashers import make_password
+from django.utils.crypto import get_random_string
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import NotAuthenticated
 from .utils import send_otp, verify_otp
@@ -164,13 +164,15 @@ class SendOrResendSMSAPIView(GenericAPIView):
                     return Response({"message": "OTP sending is disabled in this environment."}, status=status.HTTP_200_OK)
 
             except CustomUser.DoesNotExist:
+                random_password = get_random_string(length=8)  # You can choose the length
+                hashed_password = make_password(random_password)
                 user = CustomUser(
                     phone_number=phone_number, 
                     role='patient', 
                     username=phone_number, 
                     is_first_login=True, 
-                    password=CustomUser.objects.make_random_password()
                 )
+                user.set_password(hashed_password)
                 user.save()
                 group = Group.objects.get(name=user.role)
                 user.groups.add(group)
@@ -348,9 +350,18 @@ class QuestionAnswerListCreateView(APIView):
     
     def get(self, request):
         """
-        Get all answers by the logged-in user.
+        Get all answers:
+        - If the user is a patient, return their own answers.
+        - If the user is a doctor, return answers from patients assigned to them.
         """
-        answers = PatientResponse.objects.filter(user=request.user)
+        user = request.user
+        if user.role == "patient":
+            answers = PatientResponse.objects.filter(user=user)
+        elif user.role == "doctor":
+            # Assuming reverse FK from User (patients) to doctor is `assigned_doctor`
+            answers = PatientResponse.objects.filter(user__assigned_doctor=user)
+        else:
+            return Response({"detail": "Unauthorized user."}, status=status.HTTP_403_FORBIDDEN)
         serializer = QuestionAnswerSerializer(answers, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -385,10 +396,10 @@ class DashboardView(APIView):
         response_data = {"role": role}
 
         if role == "doctor":
-            total_patients = CustomUser.objects.filter(role="patient", created_diets__doctor=user).distinct().count()
+            total_patients = CustomUser.objects.filter(role="patient", assigned_doctor=user).distinct().count()
             total_diet_plans = DietPlan.objects.filter(doctor=user).count()
             active_patients = CustomUser.objects.filter(
-                role="patient", assigned_diets__doctor=user, healthstatus__status="Improving"
+                role="patient", assigned_diets__doctor=user, 
             ).distinct().count()
 
             patient_engagement_rate = (
@@ -398,13 +409,13 @@ class DashboardView(APIView):
             total_diet_plans_count = DietPlan.objects.filter(doctor=user).count()
             diet_effectiveness = (
                 round(
-                    HealthStatus.objects.filter(user__role="patient", status="Improving").count() /
+                    HealthStatus.objects.filter(patient__role="patient", health_status="Improving").count() /
                     total_diet_plans_count * 100, 2
                 ) if total_diet_plans_count else 0
             )
 
-            total_exercises = Exercise.objects.filter(patient__in=CustomUser.objects.filter(role="patient")).count()
-            completed_exercises = Exercise.objects.filter(patient__in=CustomUser.objects.filter(role="patient")).count()
+            total_exercises = Exercise.objects.filter(user__in=CustomUser.objects.filter(role="patient")).count()
+            completed_exercises = Exercise.objects.filter(user__in=CustomUser.objects.filter(role="patient")).count()
 
             exercise_compliance = (
                 round((completed_exercises / total_exercises) * 100, 2) if total_exercises else 0
