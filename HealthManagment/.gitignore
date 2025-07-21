@@ -1,9 +1,15 @@
 .env
+*.log
+*.pot
+*.pyc
+*.sqlite3
 db.sqlite3
 */migrations
 users/migrations/
 **/__pycache__
 **/__pycache__/*
+*.py[cod]
+*$py.class
 .idea/
 .env_backup
 /staticfiles
