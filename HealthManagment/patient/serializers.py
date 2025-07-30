@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from users.models import DietPlan, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, DietPlanStatus, ExerciseStatus,DietPlanMeal,DietPlanDate
+from users.models import ExerciseDate, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, DietPlanStatus, ExerciseStatus,DietPlanMeal,DietPlanDate
 from users.serializers import OptionSerializer
 from django.utils import timezone
 import datetime
@@ -175,3 +175,28 @@ class ExerciseStatusSerializer(serializers.ModelSerializer):
             import base64
             return base64.b64encode(obj.reason_audio).decode('utf-8')
         return None
+    
+class AssignedExerciseSerializer(serializers.ModelSerializer):
+    exercise_id = serializers.IntegerField(source='exercise.id')
+    exercise_title = serializers.CharField(source='exercise.title')
+    assigned_by = serializers.CharField(source='doctor.first_name')
+    status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ExerciseDate
+        fields = ['id', 'exercise_id', 'exercise_title', 'date', 'assigned_by', 'status']
+        
+    def get_status(self, obj):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        date = self.context.get("target_date", timezone.now().date())
+
+        if user and user.is_authenticated:
+            status_obj = ExerciseStatus.objects.filter(
+                user=user,
+                exercise=obj   
+            ).first()
+
+            return status_obj.status if status_obj else "pending"
+
+        return "pending"

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from users.models import CustomUser, DietPlan, MealPortion, DietPlanDate, DietPlanMeal, Profile, HealthStatus
+from users.models import CustomUser, DietPlan, MealPortion, DietPlanDate, DietPlanMeal, Profile, HealthStatus,ExerciseDate,DoctorExerciseResponse
 
 class HealthStatusSerializer(serializers.ModelSerializer):
     class Meta:
@@ -99,3 +99,14 @@ class DietPlanReadSerializer(serializers.ModelSerializer):
 
     def get_dates(self, obj):
         return [date.date for date in obj.diet_dates.all()]
+    
+    
+class ExcerciseDateAssignSerializer(serializers.Serializer):
+    patient_id = serializers.IntegerField()
+    exercise_ids = serializers.ListField(child=serializers.IntegerField())
+    dates = serializers.ListField(child=serializers.DateField())
+    
+class DoctorExerciseResponseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DoctorExerciseResponse
+        fields = '__all__'

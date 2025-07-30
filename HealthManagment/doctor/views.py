@@ -2,13 +2,13 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
-from users.models import CustomUser, DietPlan, MealPortion, Exercise, LabReport, PatientResponse, HealthStatus, DietPlanMeal
+from users.models import CustomUser, DietPlan, MealPortion, Exercise, LabReport, PatientResponse, HealthStatus, DietPlanDate,ExerciseDate
 from django.shortcuts import get_object_or_404
-from .serializers import PatientSerializer, DietPlanCreateSerializer, MealPortionSerializer,DietPlanReadSerializer,DietPlanMealSerializer
-from users.serializers import ExerciseSerializer
+from .serializers import PatientSerializer, DietPlanCreateSerializer, MealPortionSerializer,DietPlanReadSerializer,DietPlanMealSerializer,ExcerciseDateAssignSerializer,DoctorExerciseResponseSerializer
+from users.serializers import ExerciseDateSerializer
 from patient.serializers import LabReportSerializer, PatientResponseSerializer
 from users.permissions import PermissionsManager,IsDoctorUser, IsSuperAdmin, IsAdmin
-from rest_framework import viewsets, filters
+from rest_framework import viewsets, filters, generics
 class PatientManagementView(APIView):
     """
     Allows doctors to view and edit patient details.
@@ -28,16 +28,17 @@ class PatientManagementView(APIView):
         
         if patient_id:
             patient = get_object_or_404(CustomUser, id=patient_id, role='patient')
-            # Fetch assigned data
-            exercises = Exercise.objects.filter(user=patient)
+            assigned_exercises = ExerciseDate.objects.filter(patient=patient)
+            
+            
             diet_plans = DietPlan.objects.filter(patient=patient)
             lab_reports = LabReport.objects.filter(patient=patient)
             questions = PatientResponse.objects.filter(user=patient)
 
             response_data = {
                 "patient_details": PatientSerializer(patient).data,
-                "assigned_exercises": ExerciseSerializer(exercises, many=True).data,
-                "assigned_diet_plans": DietPlanMealSerializer(diet_plans, many=True).data,
+                "assigned_exercises": ExerciseDateSerializer(assigned_exercises, many=True).data,
+                "assigned_diet_plans": DietPlanReadSerializer(diet_plans, many=True).data,
                 "lab_reports": LabReportSerializer(lab_reports, many=True).data,
                 "questions": PatientResponseSerializer(questions, many=True).data
             }
@@ -139,3 +140,56 @@ class ReviewHealthStatusView(APIView):
             }
             data.append(health_status)
         return Response(data)
+    
+    
+class DoctorAssignExerciseView(APIView):
+        """
+        Allows doctors to assign exercises to patients.
+        """
+        permission_classes = [PermissionsManager, IsDoctorUser]
+        serializer_class = ExcerciseDateAssignSerializer
+        codename = 'exercisedate'
+
+        def post(self, request):
+            serializer = ExcerciseDateAssignSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            patient_id = serializer.validated_data['patient_id']
+            exercise_ids = serializer.validated_data['exercise_ids']
+            dates = serializer.validated_data['dates']
+
+            patient = get_object_or_404(CustomUser, id=patient_id, role='patient')
+            doctor = request.user 
+
+            for ex_id in exercise_ids:
+                exercise = get_object_or_404(Exercise, id=ex_id)
+                for date in dates:
+                    ExerciseDate.objects.get_or_create(
+                        exercise=exercise,
+                        date=date,
+                        doctor=doctor,
+                        patient=patient 
+                    )
+
+            return Response({"message": "Exercises assigned successfully."}, status=status.HTTP_201_CREATED)
+        
+        def get(self, request):
+            patient_id = request.query_params.get("patient_id")
+            if not patient_id:
+                return Response({"detail": "patient_id is required"}, status=400)
+
+            doctor = request.user
+            exercises = ExerciseDate.objects.filter(doctor=doctor, patient__id=patient_id)
+
+            data = [
+                {
+                    "exercise_id": ex.exercise.id,
+                    "exercise_name": ex.exercise.title,
+                    "date": ex.date
+                }
+                for ex in exercises
+            ]
+            return Response(data, status=200)
+        
+class DoctorExerciseReviewView(generics.CreateAPIView):
+    serializer_class = DoctorExerciseResponseSerializer
+    permission_classes = [IsAuthenticated]

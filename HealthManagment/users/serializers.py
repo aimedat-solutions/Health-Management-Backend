@@ -234,14 +234,13 @@ class ExerciseDateSerializer(serializers.ModelSerializer):
         fields = '__all__'
         
 class ExerciseSerializer(serializers.ModelSerializer):
-    date = ExerciseDateSerializer
-    class Meta:
+       class Meta:
         model = Exercise
         fields = [
-            'id', 'user', 'title', 'image_content', 'description', 'video_content',
-            'date', "created_at", "created_by", "updated_at", "updated_by"
+            'id', 'title', 'image_content', 'description', 'video_content',
+            "created_at", "created_by", "updated_at", "updated_by"
         ]
-        read_only_fields = ['user', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
         
 class OptionSerializer(serializers.ModelSerializer):
     class Meta:
