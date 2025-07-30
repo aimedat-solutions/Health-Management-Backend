@@ -52,12 +52,10 @@ class DietPlanMealFilter(filters.FilterSet):
         model = DietPlanDate
         fields = ['date']
 class ExerciseFilter(filters.FilterSet):
-    patient_name = filters.CharFilter(field_name="user__First_name", lookup_expr='icontains')
-    date = filters.DateFilter(field_name="date", lookup_expr="exact")
-
+    
     class Meta:
         model = Exercise
-        fields = ['title', 'id', 'description', 'date', 'patient_name']
+        fields = ['title', 'id', 'description']
         
 class DietQuestionFilter(filters.FilterSet):
     date = filters.DateFilter(field_name='last_diet_update')

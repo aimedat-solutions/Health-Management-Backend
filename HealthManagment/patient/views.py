@@ -1,8 +1,10 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from users.models import DietPlan, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, Option, DietPlanStatus,Exercise,ExerciseStatus,HealthStatus,DietPlanDate,DietPlanMeal
-from .serializers import PatientResponseSerializer,EmptyLabReportSerializer, HealthStatusSerializer, LabReportSerializer, QuestionSerializer, DietQuestionSerializer, DietPlanSerializer, DietPlanStatusSerializer, BulkPatientResponseSerializer,ExerciseStatusSerializer
+from users.models import ExerciseDate, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, Option, DietPlanStatus,Exercise,ExerciseStatus,HealthStatus,DietPlanDate,DietPlanMeal
+from .serializers import ( PatientResponseSerializer,EmptyLabReportSerializer, HealthStatusSerializer, LabReportSerializer, 
+                          QuestionSerializer, DietQuestionSerializer, DietPlanSerializer, DietPlanStatusSerializer, BulkPatientResponseSerializer,
+                          ExerciseStatusSerializer, AssignedExerciseSerializer)
 from users.permissions import PermissionsManager,IsDoctorUser,IsPatientUser
 from rest_framework import viewsets, permissions,generics,status
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -129,11 +131,11 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
 
         """
         user = self.request.user
-        if user.initial_question_completed:
-            return Response(
-                {"message": "You have already completed the initial questions. No further responses are needed."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # if user.initial_question_completed:
+        #     return Response(
+        #         {"message": "You have already completed the initial questions. No further responses are needed."},
+        #         status=status.HTTP_400_BAD_REQUEST
+        #     )
         data = request.data
         serializer = BulkPatientResponseSerializer(data=data)
         serializer.is_valid(raise_exception=True)
@@ -193,29 +195,44 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
         if answered_initial_questions >= total_initial_questions:
             user.initial_question_completed = True
             user.is_first_login = False  
+            user.last_question_answered_at = timezone.now().date()
             user.save()
 
         return Response({"message": "Responses saved successfully!"}, status=status.HTTP_201_CREATED)
 class InitialQuestionsView(generics.ListAPIView):
     serializer_class = QuestionSerializer
     permission_classes =[PermissionsManager]
-    codename = 'initialquestion'
+    codename = 'question'
 
-    def get_queryset(self):
-        user = self.request.user
-        user_status, created = CustomUser.objects.get_or_create(id=user.id)
+    def list(self, request, *args, **kwargs):
+        user = request.user
+        user_status = CustomUser.objects.get(id=user.id)
 
-        if user_status.is_first_login:
-            if not user_status.initial_question_completed:
-                return Question.objects.filter(category="initial")
-            return Question.objects.filter(category="initial")  # Don't show again if already answered
+        # If first login and hasn't answered initial questions yet → show "initial" questions
+        if user_status.is_first_login and not user_status.initial_question_completed:
+            queryset = Question.objects.filter(category="initial")
+            serializer = self.get_serializer(queryset, many=True)
+            return Response(serializer.data)
 
-        # If initial questions are not answered → Show empty
-        if not user_status.initial_question_completed:
-            return Question.objects.filter(category="initial")
+        # If initial completed, get "other" questions
+        if user_status.initial_question_completed:
+            today = timezone.now().date()
+            has_answered_today = PatientResponse.objects.filter(
+                user=user, question__category="other", created_at__date=today
+            ).exists()
 
-        # If initial questions answered → Show diet questions
-        return Question.objects.filter(category="diet")
+            if has_answered_today:
+                return Response(
+                    {"message": "Next questions will be available soon."},
+                    status=status.HTTP_200_OK
+                )
+
+            queryset = Question.objects.filter(category="other")
+            serializer = self.get_serializer(queryset, many=True)
+            return Response(serializer.data)
+
+        # Default: no questions
+        return Response([], status=status.HTTP_200_OK)
 
 class DietQuestionsView(generics.ListCreateAPIView):
     permission_classes = [PermissionsManager]
@@ -400,6 +417,17 @@ class CompleteSkipDietPlanView(APIView):
         serializer = DietPlanStatusSerializer(status_entry)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+class PatientAssignedExercisesView(APIView):
+    serializer_class = AssignedExerciseSerializer
+    permission_classes = [PermissionsManager]
+    codename = 'exercisedate'
+
+    def get(self, request):
+        patient = request.user
+        assignments = ExerciseDate.objects.filter(patient=patient)
+        serializer = AssignedExerciseSerializer(assignments, many=True)
+        return Response(serializer.data)
+    
 class CompleteSkipExerciseView(APIView):
     serializer_class = ExerciseStatusSerializer
     permission_classes = [PermissionsManager]  
@@ -432,3 +460,44 @@ class CompleteSkipExerciseView(APIView):
 
         serializer = ExerciseStatusSerializer(status_entry)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+class QuestionFlowStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        today = timezone.now().date()
+        interval = timedelta(days=int(getattr(settings, "QUESTIONS_DAYS", 15)))
+        last_answered = user.last_question_answered_at
+
+        if not user.initial_question_completed:
+            return Response({
+                "status": "available",
+                "type": "initial",
+                "message": "Initial questions are available."
+            })
+
+        has_other = PatientResponse.objects.filter(
+            user=user, question__category="other"
+        ).exists()
+
+        if not has_other:
+            return Response({
+                "status": "available",
+                "type": "other",
+                "message": "Other questions are available."
+            })
+
+        if last_answered and today >= last_answered + interval:
+            return Response({
+                "status": "available",
+                "type": "other",
+                "message": "Next round of other questions is available."
+            })
+
+        next_date = last_answered + interval if last_answered else None
+        return Response({
+            "status": "wait",
+            "next_question_date": next_date,
+            "message": f"Next questions available on {next_date}"
+        })

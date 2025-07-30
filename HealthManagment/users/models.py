@@ -40,7 +40,7 @@ class AuditModel(models.Model):
     def save(self, *args, **kwargs):
         """ Automatically set created_by & updated_by fields. """
         user = get_current_user()
-        if not self.pk and not self.created_by:
+        if not self.pk and not self.created_by and hasattr(self, '_request_user'):
             self.created_by = user
         self.updated_by = user
         super().save(*args, **kwargs)
@@ -58,12 +58,12 @@ class CustomUser(AbstractUser, AuditModel):
     """
     phone_number = PhoneNumberField(unique=True, blank=False, null=False)
     role = models.CharField(max_length=10, choices=RoleChoices.choices, default=RoleChoices.PATIENT)
-    assigned_doctor = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_patients", limit_choices_to={"role": RoleChoices.DOCTOR},)
     security_code = models.CharField(max_length=6, blank=True, null=True)  # Store OTP
     is_verified = models.BooleanField(default=False)
     sent = models.DateTimeField(null=True)  # OTP sent time
     is_first_login = models.BooleanField(default=True)
     initial_question_completed = models.BooleanField(default=False)  
+    last_question_answered_at = models.DateField(null=True, blank=True)
     last_diet_question_answered = models.DateTimeField(null=True, blank=True)
     ask_diet_question = models.BooleanField(default=True) 
 
@@ -157,28 +157,28 @@ class Exercise(AuditModel):
     """
     Stores information about different exercises performed by a patient user.
     """
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='exercises')
     title = models.CharField(max_length=255)
     description = models.TextField()
     image_content = models.ImageField(upload_to='exercise_images/', null=True, blank=True)
     video_content = models.FileField(upload_to='exercise_videos/', null=True, blank=True)
-    date = models.DateField()
 
     def __str__(self):
-        return f"{self.title} by {self.user.username} at {self.date}"
+        return f"{self.title}"
 
 class ExerciseDate(AuditModel):
     """
-    Tracks assigned dates for diet plans.
+    Tracks assigned dates for exercises.
     """
-    exercise = models.ForeignKey(Exercise, on_delete=models.CASCADE, related_name="diet_dates")
+    exercise = models.ForeignKey(Exercise, on_delete=models.CASCADE, related_name="exercise_dates")
+    doctor = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='assigned_exercises')
+    patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='patient_exercises')
     date = models.DateField()
 
     class Meta:
-        unique_together = ("exercise", "date")  
+        unique_together = ("doctor", "patient", "exercise", "date")  
 
     def __str__(self):
-        return f"{self.exercise.title} - {self.date}"
+        return f"{self.exercise.title} -> {self.patient.username} on {self.date}"
 class ExerciseStatus(AuditModel):
     """
     Tracks the status of exercises completed, skipped, or pending.
@@ -240,7 +240,7 @@ class Question(AuditModel):
     
     def save(self, *args, **kwargs):
         """Ensure only 'initial' questions have a type."""
-        if self.category == 'diet':
+        if self.category == 'other':
             self.question_type = None  
         super().save(*args, **kwargs)
 
