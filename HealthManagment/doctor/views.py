@@ -9,6 +9,7 @@ from users.serializers import ExerciseDateSerializer
 from patient.serializers import LabReportSerializer, PatientResponseSerializer
 from users.permissions import PermissionsManager,IsDoctorUser, IsSuperAdmin, IsAdmin
 from rest_framework import viewsets, filters, generics
+from django.utils.dateparse import parse_date
 class PatientManagementView(APIView):
     """
     Allows doctors to view and edit patient details.
@@ -101,7 +102,7 @@ class DietPlanViewSet(viewsets.ModelViewSet):
     permission_classes = [PermissionsManager]
     serializer_class = DietPlanCreateSerializer
     filter_backends = [filters.SearchFilter]
-    search_fields = ["patient__username"]
+    search_fields = ["patient__username", "diet_dates"]
     codename = 'dietplan'
 
     def get_queryset(self):
@@ -110,6 +111,9 @@ class DietPlanViewSet(viewsets.ModelViewSet):
             "diet_dates",
             "patient"
         )
+        patient_id = self.request.query_params.get("patient_id")
+        if patient_id:
+            qs = qs.filter(patient__id=patient_id)
         return qs
 
     def get_serializer_class(self):
@@ -119,6 +123,17 @@ class DietPlanViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(doctor=self.request.user)
+    
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        target_date = self.request.query_params.get('date')
+        if target_date:
+            from datetime import datetime
+            try:
+                context["target_date"] = datetime.strptime(target_date, "%Y-%m-%d").date()
+            except ValueError:
+                pass
+        return context
 
 class ReviewHealthStatusView(APIView):
     """

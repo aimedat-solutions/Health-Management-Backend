@@ -1,9 +1,9 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from users.models import ExerciseDate, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, Option, DietPlanStatus,Exercise,ExerciseStatus,HealthStatus,DietPlanDate,DietPlanMeal
+from users.models import ExerciseDate, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, Option, DietPlanStatus,Exercise,ExerciseStatus,HealthStatus,DietPlanDate,DietPlanMeal,DietPlan
 from .serializers import ( PatientResponseSerializer,EmptyLabReportSerializer, HealthStatusSerializer, LabReportSerializer, 
-                          QuestionSerializer, DietQuestionSerializer, DietPlanSerializer, DietPlanStatusSerializer, BulkPatientResponseSerializer,
+                          QuestionSerializer, DietQuestionSerializer, DietPlanSerializer, DietPlanStatusSerializer, CurrentMealSerializer, BulkPatientResponseSerializer,
                           ExerciseStatusSerializer, AssignedExerciseSerializer)
 from users.permissions import PermissionsManager,IsDoctorUser,IsPatientUser
 from rest_framework import viewsets, permissions,generics,status
@@ -313,7 +313,7 @@ class DietQuestionsView(generics.ListCreateAPIView):
         patient_diet, created = PatientDietQuestion.objects.get_or_create(patient=user)
 
         # Ensure the diet question can only be submitted after the allowed interval
-        allowed_days = int(getattr(settings, "DIET_QUESTION_ADD_DAYS", 7))  # Default to 7 days if setting is missing
+        allowed_days = int(getattr(settings, "DIET_QUESTION_ADD_DAYS", 3))  # Default to 3 days if setting is missing
         if not created and patient_diet.last_diet_update >= timezone.now().date() - timedelta(days=allowed_days):
             return Response({"message": "Diet details already submitted recently."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -337,6 +337,40 @@ class DietQuestionsView(generics.ListCreateAPIView):
             status=status.HTTP_201_CREATED
         )
 
+class DietQuestionStatusView(APIView):
+    """
+    Returns whether the patient should be asked diet questions (every N days).
+    """
+    permission_classes = [PermissionsManager]
+    codename = "patientdietquestion"
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        if user.role != "patient":
+            return Response({"detail": "Only patients can access this."}, status=403)
+
+        # How often questions should be asked
+        interval_days = int(getattr(settings, "DIET_QUESTION_ADD_DAYS", 3))
+
+        # Last question date
+        last_entry = PatientDietQuestion.objects.filter(patient=user).order_by("-date").first()
+
+        if not last_entry:
+            return Response({
+                "should_ask": True,
+                "last_answered_date": None,
+                "next_due_date": timezone.now().date()
+            })
+
+        last_date = last_entry.date
+        next_due_date = last_date + timedelta(days=interval_days)
+        today = timezone.now().date()
+
+        return Response({
+            "should_ask": today >= next_due_date,
+            "last_answered_date": last_date,
+            "next_due_date": next_due_date
+        })
 class DietPlanView(generics.ListAPIView):
     serializer_class = DietPlanSerializer
     permission_classes = [PermissionsManager]
@@ -369,7 +403,6 @@ class CompleteSkipDietPlanView(APIView):
     codename = 'dietplanstatus'
     
     def post(self, request):
-        print(request.data)
         """Update diet plan meal status for a specific assigned date"""
         patient = request.user
         diet_plan_meal_id = request.data.get("diet_plan")
@@ -417,6 +450,71 @@ class CompleteSkipDietPlanView(APIView):
         serializer = DietPlanStatusSerializer(status_entry)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+class CurrentOrNextMealView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        now = timezone.localtime()
+        today = now.date()
+        time_now = now.time()
+
+        # STEP 1: Try to find today's plan
+        diet_plan = DietPlan.objects.filter(
+            patient=user,
+            diet_dates__date=today
+        ).prefetch_related('meals__meal_portions').first()
+
+        # STEP 2: If none, fallback to next available plan (from tomorrow)
+        if not diet_plan:
+            diet_plan = DietPlan.objects.filter(
+                patient=user,
+                diet_dates__date__gt=today
+            ).order_by('diet_dates__date').prefetch_related('meals__meal_portions').first()
+
+            if not diet_plan:
+                return Response({"detail": "No diet plan assigned for today or upcoming days."}, status=200)
+
+            # Use next available date
+            plan_date = diet_plan.diet_dates.order_by('date').first().date
+        else:
+            plan_date = today
+
+        # STEP 3: Identify next or current meal
+        meals = diet_plan.meals.filter(start_time__isnull=False, end_time__isnull=False).order_by("start_time")
+
+        for meal in meals:
+            status_obj = DietPlanStatus.objects.filter(
+                patient=user, diet_plan=meal, date=plan_date
+            ).first()
+            status = status_obj.status if status_obj else "pending"
+
+            start = meal.start_time
+            end = meal.end_time
+
+            if time_now < start:
+                tag = "upcoming"
+            elif start <= time_now <= end:
+                tag = "ongoing"
+            else:
+                tag = "missed"
+
+            if tag in ["upcoming", "ongoing"]:
+                portions = [p.name for p in meal.meal_portions.all()]
+                time_window = f"{start.strftime('%I %p').lstrip('0')} – {end.strftime('%I %p').lstrip('0')}"
+
+                data = {
+                    "meal_type": meal.get_meal_type_display(),
+                    "time_window": time_window,
+                    "portions": portions,
+                    "status": status,
+                    "meal_status": tag,
+                    "diet_date": str(plan_date)
+                }
+
+                return Response({"current_or_next_meal": CurrentMealSerializer(data).data}, status=200)
+
+        return Response({"detail": "All meals for today or upcoming plan are completed or passed."}, status=200)
 class PatientAssignedExercisesView(APIView):
     serializer_class = AssignedExerciseSerializer
     permission_classes = [PermissionsManager]

@@ -88,6 +88,14 @@ class DietPlanSerializer(serializers.ModelSerializer):
             many=True,
             context={**self.context, "target_date": obj.date}
         ).data
+class CurrentMealSerializer(serializers.Serializer):
+    meal_type = serializers.CharField()
+    time_window = serializers.CharField()
+    portions = serializers.ListField(child=serializers.CharField())
+    status = serializers.CharField()
+    meal_status = serializers.CharField() 
+    diet_date = serializers.DateField()
+    
 
     
 class LabReportSerializer(serializers.ModelSerializer):
