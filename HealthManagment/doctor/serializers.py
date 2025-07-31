@@ -1,6 +1,6 @@
 from rest_framework import serializers
-from users.models import CustomUser, DietPlan, MealPortion, DietPlanDate, DietPlanMeal, Profile, HealthStatus,ExerciseDate,DoctorExerciseResponse
-
+from users.models import CustomUser, DietPlan, MealPortion, DietPlanDate, DietPlanMeal, DietPlanStatus, HealthStatus,ExerciseDate,DoctorExerciseResponse
+from django.utils import timezone
 class HealthStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = HealthStatus
@@ -38,10 +38,10 @@ class MealPortionSerializer(serializers.ModelSerializer):
 class DietPlanMealSerializer(serializers.ModelSerializer):
     portions = MealPortionSerializer(source="meal_portions", many=True)
     time_range = serializers.SerializerMethodField()
-
+    status = serializers.SerializerMethodField()
     class Meta:
         model = DietPlanMeal
-        fields = ["id", "meal_type", "time_range", "portions"]
+        fields = ["id", "meal_type", "time_range", "portions", "status"]
 
     def get_time_range(self, obj):
         if obj.start_time and obj.end_time:
@@ -50,6 +50,22 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
             except:
                 return None
         return None
+    
+    def get_status(self, obj):
+        request = self.context.get('request')
+        target_date = self.context.get("target_date") or timezone.now().date()
+
+        if not request or not request.user.is_authenticated:
+            return "pending"
+
+        status_obj = DietPlanStatus.objects.filter(
+            patient=obj.diet_plan.patient,
+            diet_plan=obj,
+            date=target_date
+        ).first()
+
+        return status_obj.status if status_obj else "pending"
+    
 class DietPlanDateSerializer(serializers.ModelSerializer):
     class Meta:
         model = DietPlanDate

@@ -84,7 +84,7 @@ class CustomUser(AbstractUser, AuditModel):
         Determines if the patient needs to answer diet questions (every 15 days).
         """
         if self.last_diet_question_answered:
-            return now() > self.last_diet_question_answered + timedelta(days=15)
+            return now() > self.last_diet_question_answered + timedelta(days=settings.DIET_QUESTION_ADD_DAYS)
         return True 
     
     def clean(self):
@@ -378,24 +378,28 @@ class DietPlanStatus(AuditModel):
    
 class PatientDietQuestion(AuditModel):
     """
-    Tracks dietary habits of a patient.
+    Tracks dietary habits of a patient with optional audio responses.
     """
     patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, limit_choices_to={'role': 'patient'})
     date = models.DateField(default=timezone.now)
+
     breakfast = models.TextField(null=True, blank=True)
     lunch = models.TextField(null=True, blank=True)
     eveningSnack = models.TextField(null=True, blank=True)
     dinner = models.TextField(null=True, blank=True)
-    mms = models.CharField(max_length=10, null=True, blank=True)
-    preBreakfast = models.TextField(null=True, blank=True)
+
+    breakfast_audio = models.FileField(upload_to="diet_questions/audio/", null=True, blank=True)
+    lunch_audio = models.FileField(upload_to="diet_questions/audio/", null=True, blank=True)
+    eveningSnack_audio = models.FileField(upload_to="diet_questions/audio/", null=True, blank=True)
+    dinner_audio = models.FileField(upload_to="diet_questions/audio/", null=True, blank=True)
+
     last_diet_update = models.DateField(auto_now=True)
-    
     class Meta:
         unique_together = ("patient", "date")
 
     def __str__(self):
         return f"Diet question for {self.patient.username} on {self.last_diet_update}"
-    
+
     def is_due_for_update(self):
         last_entry = PatientDietQuestion.objects.filter(patient=self.patient).order_by('-date').first()
         if not last_entry:
