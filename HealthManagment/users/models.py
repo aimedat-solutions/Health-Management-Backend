@@ -66,6 +66,7 @@ class CustomUser(AbstractUser, AuditModel):
     last_question_answered_at = models.DateField(null=True, blank=True)
     last_diet_question_answered = models.DateTimeField(null=True, blank=True)
     ask_diet_question = models.BooleanField(default=True) 
+    verified = models.BooleanField(default=False)
 
     
     REQUIRED_FIELDS = ['role', 'phone_number']
@@ -190,7 +191,7 @@ class ExerciseStatus(AuditModel):
     ]
 
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="exercise_statuses")
-    exercise = models.ForeignKey(Exercise, on_delete=models.CASCADE, related_name="status_entries")
+    exercise = models.ForeignKey(ExerciseDate, on_delete=models.CASCADE, related_name="status_entries")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
     updated_at = models.DateTimeField(auto_now=True)
     reason_audio = models.BinaryField(blank=True, null=True)  # Store audio in binary format
@@ -199,7 +200,7 @@ class ExerciseStatus(AuditModel):
         unique_together = ("user", "exercise")
 
     def __str__(self):
-        return f"{self.user.username} - {self.exercise.title}: {self.status}"
+        return f"{self.user.username} - {self.exercise.exercise.title}: {self.status}"
     
 class DoctorExerciseResponse(AuditModel):
     """
@@ -275,10 +276,10 @@ class Profile(AuditModel):
         MALE = 'male', 'Male'
         FEMALE = 'female', 'Female'
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='profile')
-    first_name = models.CharField(max_length=100)
-    last_name = models.CharField(max_length=100)
+    first_name = models.CharField(null=True, blank=True, max_length=100)
+    last_name = models.CharField(null=True, blank=True, max_length=100)
     date_of_birth = models.DateField(null=True, blank=True)
-    gender = models.CharField(max_length=10,choices=GenderChoices.choices,default=GenderChoices.FEMALE)
+    gender = models.CharField(max_length=10, null=True, blank=True, choices=GenderChoices.choices,default=GenderChoices.FEMALE)
     address = models.TextField(null=True, blank=True, help_text="Only for patients")  
     specialization = models.CharField(max_length=255, null=True, blank=True, help_text="Only for doctors")  
     profile_image = models.ImageField(upload_to='profile_images/', null=True, blank=True)
@@ -431,11 +432,7 @@ class HealthStatus(AuditModel):
     patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='health_records')
     blood_pressure = models.CharField(max_length=10, default="120/80")
     calories = models.IntegerField(default=2000)
-    month = models.IntegerField(default=0)
-    weight = models.CharField(max_length=10, default="60 KG")
-    height = models.CharField(max_length=10, default="165 CM")
     points = models.PositiveIntegerField(null=True, blank=True, help_text="Health points")
-    bmi = models.FloatField(default=22.0)
     blood_sugar = models.CharField(max_length=20, default="98 mg/dL")
     Colestrol = models.CharField(max_length=20, default="180 mg/dL")
     diet_followed = models.CharField(max_length=10, default="50%")

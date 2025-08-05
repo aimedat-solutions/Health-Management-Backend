@@ -8,17 +8,21 @@ class HealthStatusSerializer(serializers.ModelSerializer):
 
 class PatientSerializer(serializers.ModelSerializer):
     profileImage = serializers.SerializerMethodField()
+    height = serializers.SerializerMethodField()
     name = serializers.SerializerMethodField()
     age = serializers.SerializerMethodField()
     healthData = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomUser
-        fields = ["id", "profileImage", "name", "age", "healthData"]
+        fields = ["id", "profileImage", "height", "name", "age", "healthData"]
 
     def get_profileImage(self, obj):
         return obj.profile.profile_image.url if obj.profile.profile_image else None
-
+    
+    def get_height(self, obj):
+        return obj.profile.height if obj.profile.height else None
+    
     def get_name(self, obj):
         return f"{obj.profile.first_name} {obj.profile.last_name}".strip()
 
@@ -100,6 +104,11 @@ class DietPlanCreateSerializer(serializers.ModelSerializer):
 
         for date in dates_data:
             DietPlanDate.objects.create(diet_plan=diet_plan, date=date)
+            
+        patient = diet_plan.patient
+        if hasattr(patient, "verified"):  
+            patient.verified = True
+            patient.save(update_fields=["verified"])
 
         return diet_plan
 
