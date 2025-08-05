@@ -89,11 +89,11 @@ class DietPlanSerializer(serializers.ModelSerializer):
             context={**self.context, "target_date": obj.date}
         ).data
 class CurrentMealSerializer(serializers.Serializer):
+    meal_id = serializers.CharField() 
     meal_type = serializers.CharField()
     time_window = serializers.CharField()
     portions = serializers.ListField(child=serializers.CharField())
     status = serializers.CharField()
-    meal_status = serializers.CharField() 
     diet_date = serializers.DateField()
     
 
@@ -187,12 +187,27 @@ class ExerciseStatusSerializer(serializers.ModelSerializer):
 class AssignedExerciseSerializer(serializers.ModelSerializer):
     exercise_id = serializers.IntegerField(source='exercise.id')
     exercise_title = serializers.CharField(source='exercise.title')
+    exercise_description = serializers.CharField(source='exercise.description')
+    image_url = serializers.SerializerMethodField()
+    video_url = serializers.SerializerMethodField()
     assigned_by = serializers.CharField(source='doctor.first_name')
     status = serializers.SerializerMethodField()
 
     class Meta:
         model = ExerciseDate
-        fields = ['id', 'exercise_id', 'exercise_title', 'date', 'assigned_by', 'status']
+        fields = ['id', 'exercise_id', 'exercise_title', 'exercise_description',  'image_url', 'video_url','date', 'assigned_by', 'status']
+        
+    def get_image_url(self, obj):
+        request = self.context.get('request')
+        if obj.exercise.image_content and request:
+            return request.build_absolute_uri(obj.exercise.image_content.url)
+        return None
+
+    def get_video_url(self, obj):
+        request = self.context.get('request')
+        if obj.exercise.video_content and request:
+            return request.build_absolute_uri(obj.exercise.video_content.url)
+        return None
         
     def get_status(self, obj):
         request = self.context.get('request')

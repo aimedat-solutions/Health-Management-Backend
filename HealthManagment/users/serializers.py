@@ -131,12 +131,13 @@ class ProfileSerializer(serializers.ModelSerializer):
     role = serializers.CharField(source='user.role', read_only=True)
     phone_number = serializers.CharField(source='user.phone_number', read_only=True)
     profile_image = serializers.SerializerMethodField()
+    verified = serializers.BooleanField(source='user.verified', read_only=True)
     class Meta:
         model = Profile
         fields = [
             'id', 'first_name', 'last_name', 'date_of_birth', 'age', 'gender',
             'address', 'specialization', 'profile_image', 'month', 
-            'height', 'weight', 'role', 'phone_number', 
+            'height', 'weight', 'role', 'phone_number', 'verified',
         ]
         
     def get_profile_image(self, obj):
@@ -148,6 +149,7 @@ class ProfileSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(url)
             return url
         return None    
+    
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get('request', None)

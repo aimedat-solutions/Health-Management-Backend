@@ -72,7 +72,7 @@ class CustomLoginView(LoginView):
             'refresh_token': refresh_token,
             'is_new_user': user.is_first_login,   
             'initial_question_completed': user.initial_question_completed,
-            'ask_deit_questions': user.ask_diet_question,
+            'ask_diet_questions': user.ask_diet_question,
         }
         response_data.update(CustomUserDetailsSerializer(user).data)
         return Response(response_data, status=status.HTTP_200_OK)

@@ -8,12 +8,12 @@ from .serializers import ( PatientResponseSerializer,EmptyLabReportSerializer, H
 from users.permissions import PermissionsManager,IsDoctorUser,IsPatientUser
 from rest_framework import viewsets, permissions,generics,status
 from rest_framework.parsers import MultiPartParser, FormParser
-from users.filters import DietQuestionFilter,DietPlanMealFilter
+from users.filters import DietQuestionFilter,DietPlanMealFilter,LabReportFilter,ExerciseFilter
 from django_filters.rest_framework import DjangoFilterBackend
-from users.filters import LabReportFilter
 from rest_framework.filters import OrderingFilter
 from rest_framework.viewsets import ModelViewSet
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from datetime import timedelta,datetime
 from django.conf import settings
 from django.shortcuts import get_object_or_404
@@ -118,85 +118,77 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
     
     def create(self, request, *args, **kwargs):
         """
-        - Accepts multiple question-answer pairs.
-        - Saves all responses.
-        - Checks if all initial questions are answered before updating user status.
+        - Accepts initial questions only once.
+        - Accepts other questions only after initial questions are completed.
+        - Supports single or multiple answers.
         - Example request for POST
         {
             "questions": ["1", "2", "3"],
             "1": "5-7 hours",
             "2": "First trimester (weeks 1-13)",
-            "3": "Ft"
+            "3": ["Option A", "Option B"]
         }
 
         """
-        user = self.request.user
-        # if user.initial_question_completed:
-        #     return Response(
-        #         {"message": "You have already completed the initial questions. No further responses are needed."},
-        #         status=status.HTTP_400_BAD_REQUEST
-        #     )
+        user = request.user
         data = request.data
+
         serializer = BulkPatientResponseSerializer(data=data)
         serializer.is_valid(raise_exception=True)
-        
+
         question_ids = serializer.validated_data["questions"]
+        questions = Question.objects.filter(id__in=question_ids)
+        initial_questions = questions.filter(category="initial")
+        other_questions = questions.filter(category="other")
+
+        if not user.initial_question_completed and other_questions.exists():
+            return Response(
+                {"message": "You must complete all initial questions before answering other questions."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if user.initial_question_completed and initial_questions.exists():
+            return Response(
+                {"message": "Initial questions already completed. You can now only answer other questions."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         responses_to_create = []
-        for q_id in question_ids:
-            try:
-                question = Question.objects.get(id=q_id)
-                response_value = data.get(str(q_id))  # Get the answer for the question
+        for question in questions:
+            q_id = str(question.id)
+            response_value = data.get(q_id)
 
-                # Handle multiple-choice answers
-                if isinstance(response_value, list):
-                    for option_value in response_value:
-                        selected_option = Option.objects.filter(question=question, value=option_value).first()
-                        if selected_option:
-                            responses_to_create.append(
-                                PatientResponse(
-                                    user=user,
-                                    question=question,
-                                    selected_option=selected_option,
-                                    response_text=None
-                                )
-                            )
-                        else:
-                            responses_to_create.append(
-                                PatientResponse(
-                                    user=user,
-                                    question=question,
-                                    selected_option=None,
-                                    response_text=option_value
-                                )
-                            )
-                else:
-                    selected_option = Option.objects.filter(question=question, value=response_value).first()
-                    responses_to_create.append(
-                        PatientResponse(
-                            user=user,
-                            question=question,
-                            selected_option=selected_option,
-                            response_text=None if selected_option else response_value
-                        )
-                    )
+            if isinstance(response_value, list):
+                for val in response_value:
+                    selected_option = Option.objects.filter(question=question, value=val).first()
+                    responses_to_create.append(PatientResponse(
+                        user=user,
+                        question=question,
+                        selected_option=selected_option if selected_option else None,
+                        response_text=None if selected_option else val
+                    ))
+            else:
+                selected_option = Option.objects.filter(question=question, value=response_value).first()
+                responses_to_create.append(PatientResponse(
+                    user=user,
+                    question=question,
+                    selected_option=selected_option if selected_option else None,
+                    response_text=None if selected_option else response_value
+                ))
 
-            except Question.DoesNotExist:
-                return Response({"error": f"Question ID {q_id} not found."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Bulk create responses
         PatientResponse.objects.bulk_create(responses_to_create)
 
-        # Check if all initial questions are answered
-        total_initial_questions = Question.objects.filter(category="initial").count()
-        answered_initial_questions = PatientResponse.objects.filter(
-            user=user, question__category="initial"
-        ).values_list("question", flat=True).distinct().count()
+        if not user.initial_question_completed:
+            total_initial = Question.objects.filter(category="initial").count()
+            answered_initial = PatientResponse.objects.filter(
+                user=user, question__category="initial"
+            ).values_list("question", flat=True).distinct().count()
 
-        if answered_initial_questions >= total_initial_questions:
-            user.initial_question_completed = True
-            user.is_first_login = False  
-            user.last_question_answered_at = timezone.now().date()
-            user.save()
+            if answered_initial >= total_initial:
+                user.initial_question_completed = True
+                user.is_first_login = False
+                user.last_question_answered_at = timezone.now().date()
+                user.save()
 
         return Response({"message": "Responses saved successfully!"}, status=status.HTTP_201_CREATED)
 class InitialQuestionsView(generics.ListAPIView):
@@ -296,9 +288,7 @@ class DietQuestionsView(generics.ListCreateAPIView):
             "breakfast": "Oatmeal with fruits",
             "lunch": "Grilled chicken with salad",      
             "dinner": "Steamed fish with vegetables",
-            eveningSnack": "Mixed nuts", 
-            "mms": "3", 
-            "preBreakfast": "1"
+            "eveningSnack": "Mixed nuts"
         }
         """
         user = request.user
@@ -312,19 +302,15 @@ class DietQuestionsView(generics.ListCreateAPIView):
 
         patient_diet, created = PatientDietQuestion.objects.get_or_create(patient=user)
 
-        # Ensure the diet question can only be submitted after the allowed interval
-        allowed_days = int(getattr(settings, "DIET_QUESTION_ADD_DAYS", 3))  # Default to 3 days if setting is missing
+        allowed_days = int(getattr(settings, "DIET_QUESTION_ADD_DAYS", 3))  
         if not created and patient_diet.last_diet_update >= timezone.now().date() - timedelta(days=allowed_days):
             return Response({"message": "Diet details already submitted recently."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Update diet details
-        diet_fields = ["date", "breakfast", "lunch", "eveningSnack", "dinner", "mms", "preBreakfast"]
+        diet_fields = ["date", "breakfast", "lunch", "eveningSnack", "dinner", "breakfast_audio", "lunch_audio", "eveningSnack_audio", "dinner_audio"]
         for field in diet_fields:
             setattr(patient_diet, field, request.data.get(field, getattr(patient_diet, field)))
 
         patient_diet.save()
-
-        # Set flag to False after submission
         user.ask_diet_question = False
         user.save()
 
@@ -339,7 +325,8 @@ class DietQuestionsView(generics.ListCreateAPIView):
 
 class DietQuestionStatusView(APIView):
     """
-    Returns whether the patient should be asked diet questions (every N days).
+    GET: Returns whether the patient should be asked diet questions (every 3 days).
+    POST: Allows skipping the question by setting ask_diet_question = False.
     """
     permission_classes = [PermissionsManager]
     codename = "patientdietquestion"
@@ -349,27 +336,63 @@ class DietQuestionStatusView(APIView):
         if user.role != "patient":
             return Response({"detail": "Only patients can access this."}, status=403)
 
-        # How often questions should be asked
         interval_days = int(getattr(settings, "DIET_QUESTION_ADD_DAYS", 3))
+        today = timezone.now().date()
 
-        # Last question date
         last_entry = PatientDietQuestion.objects.filter(patient=user).order_by("-date").first()
 
-        if not last_entry:
+        # Skipped last time — return skip response
+        if user.ask_diet_question is False and not last_entry:
+            return Response({
+                "should_ask": False,
+                "last_answered_date": None,
+                "next_due_date": None
+            })
+
+        # If patient submitted last time
+        if last_entry:
+            last_date = last_entry.date
+            next_due_date = last_date + timedelta(days=interval_days)
+
+            if today >= next_due_date and not user.ask_diet_question:
+                user.ask_diet_question = True
+                user.save(update_fields=["ask_diet_question"])
+
+            return Response({
+                "should_ask": user.ask_diet_question,
+                "last_answered_date": last_date,
+                "next_due_date": next_due_date
+            })
+
+        # First time or ask_diet_question manually true
+        if user.ask_diet_question:
             return Response({
                 "should_ask": True,
                 "last_answered_date": None,
-                "next_due_date": timezone.now().date()
+                "next_due_date": today
             })
 
-        last_date = last_entry.date
-        next_due_date = last_date + timedelta(days=interval_days)
-        today = timezone.now().date()
+        # Fallback (shouldn't reach here usually)
+        return Response({
+            "should_ask": False,
+            "last_answered_date": None,
+            "next_due_date": None
+        })
+
+    def post(self, request, *args, **kwargs):
+        """
+        Patient skips diet questions — mark as skipped.
+        """
+        user = request.user
+        if user.role != "patient":
+            return Response({"detail": "Only patients can perform this action."}, status=403)
+
+        user.ask_diet_question = False
+        user.save(update_fields=["ask_diet_question"])
 
         return Response({
-            "should_ask": today >= next_due_date,
-            "last_answered_date": last_date,
-            "next_due_date": next_due_date
+            "message": "Diet question skipped.",
+            "should_ask": False
         })
 class DietPlanView(generics.ListAPIView):
     serializer_class = DietPlanSerializer
@@ -459,13 +482,11 @@ class CurrentOrNextMealView(APIView):
         today = now.date()
         time_now = now.time()
 
-        # STEP 1: Try to find today's plan
         diet_plan = DietPlan.objects.filter(
             patient=user,
             diet_dates__date=today
         ).prefetch_related('meals__meal_portions').first()
 
-        # STEP 2: If none, fallback to next available plan (from tomorrow)
         if not diet_plan:
             diet_plan = DietPlan.objects.filter(
                 patient=user,
@@ -475,22 +496,23 @@ class CurrentOrNextMealView(APIView):
             if not diet_plan:
                 return Response({"detail": "No diet plan assigned for today or upcoming days."}, status=200)
 
-            # Use next available date
             plan_date = diet_plan.diet_dates.order_by('date').first().date
         else:
             plan_date = today
 
-        # STEP 3: Identify next or current meal
         meals = diet_plan.meals.filter(start_time__isnull=False, end_time__isnull=False).order_by("start_time")
 
         for meal in meals:
+            start = meal.start_time
+            end = meal.end_time
+
             status_obj = DietPlanStatus.objects.filter(
                 patient=user, diet_plan=meal, date=plan_date
             ).first()
             status = status_obj.status if status_obj else "pending"
 
-            start = meal.start_time
-            end = meal.end_time
+            if status in ["completed", "skipped"]:
+                continue
 
             if time_now < start:
                 tag = "upcoming"
@@ -500,21 +522,20 @@ class CurrentOrNextMealView(APIView):
                 tag = "missed"
 
             if tag in ["upcoming", "ongoing"]:
-                portions = [p.name for p in meal.meal_portions.all()]
                 time_window = f"{start.strftime('%I %p').lstrip('0')} – {end.strftime('%I %p').lstrip('0')}"
 
                 data = {
+                    "meal_id": meal.id,
                     "meal_type": meal.get_meal_type_display(),
                     "time_window": time_window,
-                    "portions": portions,
+                    "portions": [p.name for p in meal.meal_portions.all()],
                     "status": status,
-                    "meal_status": tag,
                     "diet_date": str(plan_date)
                 }
+                return Response({"current_meal": data}, status=200)
 
-                return Response({"current_or_next_meal": CurrentMealSerializer(data).data}, status=200)
-
-        return Response({"detail": "All meals for today or upcoming plan are completed or passed."}, status=200)
+        return Response({"detail": "No upcoming or pending meals for today."}, status=200)
+    
 class PatientAssignedExercisesView(APIView):
     serializer_class = AssignedExerciseSerializer
     permission_classes = [PermissionsManager]
@@ -522,8 +543,24 @@ class PatientAssignedExercisesView(APIView):
 
     def get(self, request):
         patient = request.user
-        assignments = ExerciseDate.objects.filter(patient=patient)
-        serializer = AssignedExerciseSerializer(assignments, many=True)
+        date = request.query_params.get('date')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+
+        queryset = ExerciseDate.objects.filter(patient=patient)
+
+        if date:
+            parsed_date = parse_date(date)
+            if parsed_date:
+                queryset = queryset.filter(date=parsed_date)
+
+        elif start_date and end_date:
+            start = parse_date(start_date)
+            end = parse_date(end_date)
+            if start and end:
+                queryset = queryset.filter(date__range=(start, end))
+
+        serializer = AssignedExerciseSerializer(queryset, many=True, context={'request': request})
         return Response(serializer.data)
     
 class CompleteSkipExerciseView(APIView):
@@ -534,17 +571,17 @@ class CompleteSkipExerciseView(APIView):
     def post(self, request):
         """Mark exercise as skipped or completed"""
         user_id = request.user.id 
-        exercise_id = request.data.get("exercise")
+        id = request.data.get("exercise")
         new_status = request.data.get("status")  
         audio_file = request.FILES.get("audio_reason")  
 
-        if not new_status or not exercise_id:
+        if not new_status or not id:
             return Response(
                 {"error": "Both 'exercise' and 'status' are required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        exercise = get_object_or_404(Exercise, id=exercise_id)
+        exercise = get_object_or_404(ExerciseDate, id=id)
 
         audio_data = None
         if new_status == "skipped" and audio_file:
@@ -553,7 +590,7 @@ class CompleteSkipExerciseView(APIView):
         status_entry, created = ExerciseStatus.objects.update_or_create(
             user_id=user_id,  
             exercise=exercise,
-            defaults={"status": new_status, "audio_reason": audio_data}
+            defaults={"status": new_status, "reason_audio": audio_data}
         )
 
         serializer = ExerciseStatusSerializer(status_entry)
