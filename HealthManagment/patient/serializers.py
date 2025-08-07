@@ -2,7 +2,7 @@ from rest_framework import serializers
 from users.models import ExerciseDate, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, DietPlanStatus, ExerciseStatus,DietPlanMeal,DietPlanDate
 from users.serializers import OptionSerializer
 from django.utils import timezone
-import datetime
+from datetime import date
 class EmptyLabReportSerializer(serializers.Serializer):
     message = serializers.SerializerMethodField()
 
@@ -106,6 +106,11 @@ class LabReportSerializer(serializers.ModelSerializer):
         
     def get_message(self, obj):
         return "Lab report exists for the patient."
+    
+    def create(self, validated_data):
+        validated_data['patient'] = self.context['request'].user
+        validated_data['date_of_report'] = date.today()
+        return super().create(validated_data)
         
 class HealthStatusSerializer(serializers.ModelSerializer):
     class Meta:
