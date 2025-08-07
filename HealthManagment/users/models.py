@@ -180,6 +180,13 @@ class ExerciseDate(AuditModel):
 
     def __str__(self):
         return f"{self.exercise.title} -> {self.patient.username} on {self.date}"
+    
+    def save(self, *args, **kwargs):
+        if self.doctor.role != 'doctor':
+            raise ValidationError("Selected doctor must have role 'doctor'")
+        if self.patient.role != 'patient':
+            raise ValidationError("Selected patient must have role 'patient'")
+        super().save(*args, **kwargs)
 class ExerciseStatus(AuditModel):
     """
     Tracks the status of exercises completed, skipped, or pending.
