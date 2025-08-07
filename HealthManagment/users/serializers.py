@@ -130,7 +130,7 @@ class CustomUserSerializer(serializers.ModelSerializer):
 class ProfileSerializer(serializers.ModelSerializer):
     role = serializers.CharField(source='user.role', read_only=True)
     phone_number = serializers.CharField(source='user.phone_number', read_only=True)
-    profile_image = serializers.SerializerMethodField()
+    profile_image = serializers.ImageField(required=False, allow_null=True)
     verified = serializers.BooleanField(source='user.verified', read_only=True)
     class Meta:
         model = Profile
@@ -140,20 +140,16 @@ class ProfileSerializer(serializers.ModelSerializer):
             'height', 'weight', 'role', 'phone_number', 'verified',
         ]
         
-    def get_profile_image(self, obj):
-        request = self.context.get('request')
-        if obj.profile_image:
-            url = obj.profile_image.url
-            # Make absolute for local development
-            if request is not None:
-                return request.build_absolute_uri(url)
-            return url
-        return None    
-    
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get('request', None)
 
+        if instance.profile_image and request is not None:
+            data['profile_image'] = request.build_absolute_uri(instance.profile_image.url)
+        else:
+            data['profile_image'] = None
+
+        # Hide specialization if not doctor
         if request and hasattr(request, 'user') and request.user.is_authenticated:
             if request.user.role != 'doctor':
                 data.pop('specialization', None)
