@@ -39,8 +39,8 @@ class LabReportViewSet(viewsets.ModelViewSet):
     
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
-
         if not queryset.exists():
+            from .serializers import EmptyLabReportSerializer
             serializer = EmptyLabReportSerializer({})
             return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -51,11 +51,6 @@ class LabReportViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
