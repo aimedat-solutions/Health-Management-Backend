@@ -15,4 +15,4 @@ users/migrations/
 /staticfiles
 /mediafiles
 .vscode
-venv/
+ ../venv/

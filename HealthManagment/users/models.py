@@ -426,7 +426,7 @@ class LabReport(AuditModel):
     date_of_report = models.DateField()
 
     def __str__(self):
-        return f"{self.report_name} for {self.patient.first_name} on {self.date_of_report}"
+        return f"{self.report_name} for {self.patient.username} on {self.date_of_report}"
     
     
     
