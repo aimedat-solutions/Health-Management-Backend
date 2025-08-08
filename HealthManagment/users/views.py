@@ -71,6 +71,8 @@ class CustomLoginView(LoginView):
             'access_token': access_token,
             'refresh_token': refresh_token,
             'is_new_user': user.is_first_login,   
+            'initial_question_completed': user.initial_question_completed,
+            'ask_diet_questions': user.ask_diet_question,
         }
         response_data.update(CustomUserDetailsSerializer(user).data)
         return Response(response_data, status=status.HTTP_200_OK)
@@ -316,7 +318,7 @@ class ExerciseListCreateView(generics.ListCreateAPIView):
     permission_classes = [PermissionsManager]
     filter_backends = [DjangoFilterBackend]
     filterset_class = ExerciseFilter
-    serch_field = ['date ']
+    serch_field = ['title']
     codename = 'exercise'
     
     # def get_queryset(self):

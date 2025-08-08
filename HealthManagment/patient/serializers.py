@@ -1,8 +1,8 @@
 from rest_framework import serializers
-from users.models import DietPlan, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, DietPlanStatus, ExerciseStatus,DietPlanMeal,DietPlanDate
+from users.models import ExerciseDate, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, DietPlanStatus, ExerciseStatus,DietPlanMeal,DietPlanDate
 from users.serializers import OptionSerializer
 from django.utils import timezone
-import datetime
+from datetime import date
 class EmptyLabReportSerializer(serializers.Serializer):
     message = serializers.SerializerMethodField()
 
@@ -88,6 +88,14 @@ class DietPlanSerializer(serializers.ModelSerializer):
             many=True,
             context={**self.context, "target_date": obj.date}
         ).data
+class CurrentMealSerializer(serializers.Serializer):
+    meal_id = serializers.CharField() 
+    meal_type = serializers.CharField()
+    time_window = serializers.CharField()
+    portions = serializers.ListField(child=serializers.CharField())
+    status = serializers.CharField()
+    diet_date = serializers.DateField()
+    
 
     
 class LabReportSerializer(serializers.ModelSerializer):
@@ -98,6 +106,11 @@ class LabReportSerializer(serializers.ModelSerializer):
         
     def get_message(self, obj):
         return "Lab report exists for the patient."
+    
+    def create(self, validated_data):
+        validated_data['patient'] = self.context['request'].user
+        validated_data['date_of_report'] = date.today()
+        return super().create(validated_data)
         
 class HealthStatusSerializer(serializers.ModelSerializer):
     class Meta:
@@ -175,3 +188,43 @@ class ExerciseStatusSerializer(serializers.ModelSerializer):
             import base64
             return base64.b64encode(obj.reason_audio).decode('utf-8')
         return None
+    
+class AssignedExerciseSerializer(serializers.ModelSerializer):
+    exercise_id = serializers.IntegerField(source='exercise.id')
+    exercise_title = serializers.CharField(source='exercise.title')
+    exercise_description = serializers.CharField(source='exercise.description')
+    image_url = serializers.SerializerMethodField()
+    video_url = serializers.SerializerMethodField()
+    assigned_by = serializers.CharField(source='doctor.first_name')
+    status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ExerciseDate
+        fields = ['id', 'exercise_id', 'exercise_title', 'exercise_description',  'image_url', 'video_url','date', 'assigned_by', 'status']
+        
+    def get_image_url(self, obj):
+        request = self.context.get('request')
+        if obj.exercise.image_content and request:
+            return request.build_absolute_uri(obj.exercise.image_content.url)
+        return None
+
+    def get_video_url(self, obj):
+        request = self.context.get('request')
+        if obj.exercise.video_content and request:
+            return request.build_absolute_uri(obj.exercise.video_content.url)
+        return None
+        
+    def get_status(self, obj):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        date = self.context.get("target_date", timezone.now().date())
+
+        if user and user.is_authenticated:
+            status_obj = ExerciseStatus.objects.filter(
+                user=user,
+                exercise=obj   
+            ).first()
+
+            return status_obj.status if status_obj else "pending"
+
+        return "pending"
