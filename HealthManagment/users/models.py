@@ -440,6 +440,7 @@ class HealthStatus(AuditModel):
     blood_pressure = models.CharField(max_length=10, default="120/80")
     calories = models.IntegerField(default=2000)
     points = models.PositiveIntegerField(null=True, blank=True, help_text="Health points")
+    bmi = models.FloatField(null=True, blank=True, help_text="Body Mass Index")
     blood_sugar = models.CharField(max_length=20, default="98 mg/dL")
     Colestrol = models.CharField(max_length=20, default="180 mg/dL")
     diet_followed = models.CharField(max_length=10, default="50%")
