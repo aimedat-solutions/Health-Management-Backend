@@ -194,31 +194,40 @@ class InitialQuestionsView(generics.ListAPIView):
     def list(self, request, *args, **kwargs):
         user = request.user
         user_status = CustomUser.objects.get(id=user.id)
+        interval_days = int(getattr(settings, "QUESTIONS_DAYS", 10))
+        interval = timedelta(days=interval_days)
+        today = timezone.now().date()
 
-        # If first login and hasn't answered initial questions yet → show "initial" questions
         if user_status.is_first_login and not user_status.initial_question_completed:
             queryset = Question.objects.filter(category="initial")
             serializer = self.get_serializer(queryset, many=True)
             return Response(serializer.data)
 
-        # If initial completed, get "other" questions
         if user_status.initial_question_completed:
-            today = timezone.now().date()
-            has_answered_today = PatientResponse.objects.filter(
-                user=user, question__category="other", created_at__date=today
-            ).exists()
+            last_other_answer = (
+                PatientResponse.objects
+                .filter(user=user, question__category="other")
+                .order_by("-created_at")
+                .values_list("created_at", flat=True)
+                .first()
+            )
 
-            if has_answered_today:
-                return Response(
-                    {"message": "Next questions will be available soon."},
-                    status=status.HTTP_200_OK
-                )
+            if not last_other_answer:
+                queryset = Question.objects.filter(category="other")
+                serializer = self.get_serializer(queryset, many=True)
+                return Response(serializer.data)
 
-            queryset = Question.objects.filter(category="other")
-            serializer = self.get_serializer(queryset, many=True)
-            return Response(serializer.data)
+            last_answer_date = last_other_answer.date()
 
-        # Default: no questions
+            if today >= last_answer_date + interval:
+                queryset = Question.objects.filter(category="other")
+                serializer = self.get_serializer(queryset, many=True)
+                return Response(serializer.data)
+
+            return Response(
+                {"message": f"Next questions will be available on {last_answer_date + interval}."},
+                status=status.HTTP_200_OK
+            )
         return Response([], status=status.HTTP_200_OK)
 
 class DietQuestionsView(generics.ListCreateAPIView):
@@ -597,8 +606,8 @@ class QuestionFlowStatusView(APIView):
     def get(self, request):
         user = request.user
         today = timezone.now().date()
-        interval = timedelta(days=int(getattr(settings, "QUESTIONS_DAYS", 15)))
-        last_answered = user.last_question_answered_at
+        interval_days = int(getattr(settings, "QUESTIONS_DAYS", 10))
+        interval = timedelta(days=interval_days)
 
         if not user.initial_question_completed:
             return Response({
@@ -607,9 +616,13 @@ class QuestionFlowStatusView(APIView):
                 "message": "Initial questions are available."
             })
 
-        has_other = PatientResponse.objects.filter(
-            user=user, question__category="other"
-        ).exists()
+        has_other = (
+            PatientResponse.objects
+            .filter(user=user, question__category="other")
+            .order_by("-created_at")
+            .values_list("created_at", flat=True)
+            .first()
+        )
 
         if not has_other:
             return Response({
@@ -617,17 +630,17 @@ class QuestionFlowStatusView(APIView):
                 "type": "other",
                 "message": "Other questions are available."
             })
-
-        if last_answered and today >= last_answered + interval:
+        last_other_answer_date = has_other.date()
+        if today >= last_other_answer_date + interval:
             return Response({
                 "status": "available",
                 "type": "other",
                 "message": "Next round of other questions is available."
             })
 
-        next_date = last_answered + interval if last_answered else None
+        next_date = last_other_answer_date  + interval if last_other_answer_date  else None
         return Response({
             "status": "wait",
             "next_question_date": next_date,
-            "message": f"Next questions available on {next_date}"
+            "message": f"Next questions available on {next_date}" if next_date else "No previous answer date found."
         })

@@ -9,68 +9,41 @@ from users.serializers import ExerciseDateSerializer
 from patient.serializers import LabReportSerializer, PatientResponseSerializer
 from users.permissions import PermissionsManager,IsDoctorUser, IsSuperAdmin, IsAdmin
 from rest_framework import viewsets, filters, generics
-from django.utils.dateparse import parse_date
-class PatientManagementView(APIView):
+from django_filters.rest_framework import DjangoFilterBackend
+from users.filters import CustomUserFilter
+from users.pagination import Pagination
+class PatientManagementViewSet(viewsets.ModelViewSet):
     """
     Allows doctors to view and edit patient details.
     """
     permission_classes = [PermissionsManager,IsDoctorUser,]
     serializer_class = PatientSerializer
+    queryset = CustomUser.objects.filter(role='patient')
+    pagination_class = Pagination
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_class = CustomUserFilter
+    search_fields = ['profile__first_name', 'profile__last_name', 'email', 'phone_number']
+    ordering_fields = ['first_name', 'date_joined']
+    ordering = ['first_name'] 
+    codename = 'patientmanagement'
 
-    def get(self, request, patient_id=None):
-        """
-        - If patient_id is provided, return full details including assigned exercises, diet plans, lab reports, and questions.
-        - If patient_id is not provided, return a list of all patients.
-        """
-        doctor = request.user
+    def retrieve(self, request, pk=None):
+        patient = get_object_or_404(CustomUser, id=pk, role='patient')
         
-        if doctor.role != "doctor":  # Ensure the user is a doctor
-            return Response({"error": "Unauthorized access"}, status=status.HTTP_403_FORBIDDEN)
-        
-        if patient_id:
-            patient = get_object_or_404(CustomUser, id=patient_id, role='patient')
-            assigned_exercises = ExerciseDate.objects.filter(patient=patient)
-            
-            
-            diet_plans = DietPlan.objects.filter(patient=patient)
-            lab_reports = LabReport.objects.filter(patient=patient)
-            questions = PatientResponse.objects.filter(user=patient)
+        assigned_exercises = ExerciseDate.objects.filter(patient=patient)
+        diet_plans = DietPlan.objects.filter(patient=patient)
+        lab_reports = LabReport.objects.filter(patient=patient)
+        questions = PatientResponse.objects.filter(user=patient)
 
-            response_data = {
-                "patient_details": PatientSerializer(patient).data,
-                "assigned_exercises": ExerciseDateSerializer(assigned_exercises, many=True).data,
-                "assigned_diet_plans": DietPlanReadSerializer(diet_plans, many=True).data,
-                "lab_reports": LabReportSerializer(lab_reports, many=True).data,
-                "questions": PatientResponseSerializer(questions, many=True).data
-            }
-
-            return Response(response_data, status=status.HTTP_200_OK)
-        
-        # If no patient_id is provided, return all patients
-        patients = CustomUser.objects.filter(role='patient') 
-        response_data = {"patients": PatientSerializer(patients, many=True).data}
-        return Response(response_data, status=status.HTTP_200_OK)
+        data = {
+            "patient_details": PatientSerializer(patient).data,
+            "assigned_exercises": ExerciseDateSerializer(assigned_exercises, many=True).data,
+            "assigned_diet_plans": DietPlanReadSerializer(diet_plans, many=True).data,
+            "lab_reports": LabReportSerializer(lab_reports, many=True).data,
+            "questions": PatientResponseSerializer(questions, many=True).data
+        }
+        return Response(data, status=status.HTTP_200_OK)
     
-    def patch(self, request, patient_id=None):
-        """
-        Doctor can assign a patient to themselves.
-        """
-        user = request.user
-        if user.role != "doctor":
-            return Response({"error": "Unauthorized access"}, status=status.HTTP_403_FORBIDDEN)
-
-        if not patient_id:
-            return Response({"error": "Patient ID is required to assign."}, status=status.HTTP_400_BAD_REQUEST)
-
-        patient = get_object_or_404(CustomUser, id=patient_id, role='patient')
-
-        if patient.assigned_doctor:
-            return Response({"error": "This patient is already assigned to a doctor."}, status=status.HTTP_400_BAD_REQUEST)
-
-        patient.assigned_doctor = user
-        patient.save()
-
-        return Response({"message": f"Patient {patient.get_full_name()} has been assigned to you."}, status=status.HTTP_200_OK)
 
 class MealPortionViewSet(viewsets.ModelViewSet):
     queryset = MealPortion.objects.all()
@@ -188,17 +161,19 @@ class DoctorAssignExerciseView(APIView):
             return Response({"message": "Exercises assigned successfully."}, status=status.HTTP_201_CREATED)
         
         def get(self, request):
-            patient_id = request.query_params.get("patient_id")
-            if not patient_id:
-                return Response({"detail": "patient_id is required"}, status=400)
-
+            """
+            Allows doctors to view assigned exercises.
+            """
             doctor = request.user
-            exercises = ExerciseDate.objects.filter(doctor=doctor, patient__id=patient_id)
+            exercises = ExerciseDate.objects.filter(doctor=doctor)
 
             data = [
                 {
                     "exercise_id": ex.exercise.id,
                     "exercise_name": ex.exercise.title,
+                    "patient_name": ex.patient.profile.first_name + " " + ex.patient.profile.last_name,
+                    "assigned_by": ex.doctor.profile.first_name + " " + ex.doctor.profile.last_name,
+                    "status": ex.status_entries.first().status if ex.status_entries.exists() else "pending",
                     "date": ex.date
                 }
                 for ex in exercises
