@@ -12,6 +12,9 @@ from rest_framework import viewsets, filters, generics
 from django_filters.rest_framework import DjangoFilterBackend
 from users.filters import CustomUserFilter
 from users.pagination import Pagination
+from django.db.models.functions import ExtractYear
+from django.db.models import IntegerField, F, ExpressionWrapper
+from django.utils.timezone import now
 class PatientManagementViewSet(viewsets.ModelViewSet):
     """
     Allows doctors to view and edit patient details.
@@ -23,10 +26,20 @@ class PatientManagementViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = CustomUserFilter
     search_fields = ['profile__first_name', 'profile__last_name', 'email', 'phone_number']
-    ordering_fields = ['first_name', 'date_joined']
-    ordering = ['first_name'] 
+    ordering_fields = ['profile__first_name', 'age', 'profile__month', 'date_joined']
+    ordering = ['profile__first_name', 'age', 'profile__month', ] 
     codename = 'patientmanagement'
-
+    
+    def get_queryset(self):
+        return (
+            CustomUser.objects.filter(role='patient')
+            .annotate(
+                age=ExpressionWrapper(
+                    ExtractYear(now()) - ExtractYear(F('profile__date_of_birth')),
+                    output_field=IntegerField()
+                )
+            )
+        )
     def retrieve(self, request, pk=None):
         patient = get_object_or_404(CustomUser, id=pk, role='patient')
         

@@ -118,12 +118,16 @@ class HealthStatusSerializer(serializers.ModelSerializer):
         fields = '__all__'
 class QuestionSerializer(serializers.ModelSerializer):
     options = OptionSerializer(many=True, read_only=True)
+    sub_questions = serializers.SerializerMethodField()
     class Meta:
         model = Question
         fields = [
             "id", "question_image", "question_text", "category", "type", "placeholder", "max_length",
-            "created_at", "updated_at", "created_by", "updated_by", "options"
-        ]
+            "condition_value", "options", "sub_questions"]
+    
+    def get_sub_questions(self, obj):
+        sub_qs = obj.sub_questions.all()
+        return QuestionSerializer(sub_qs, many=True, context=self.context).data
 class PatientResponseSerializer(serializers.ModelSerializer):
     class Meta:
         model = PatientResponse

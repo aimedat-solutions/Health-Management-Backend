@@ -135,7 +135,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
         fields = [
-            'id', 'first_name', 'last_name', 'date_of_birth', 'age', 'gender',
+            'id', 'first_name', 'last_name', 'date_of_birth', 'age', 'gender', 'occupation',
             'address', 'specialization', 'profile_image', 'month', 
             'height', 'weight', 'role', 'phone_number', 'verified',
         ]
@@ -243,15 +243,19 @@ class ExerciseSerializer(serializers.ModelSerializer):
 class OptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Option
-        fields = ['id', 'value',"created_at", "created_by", "updated_at", "updated_by"]
+        fields = ['id', 'value', 'type'] 
 
 class QuestionSerializer(serializers.ModelSerializer):
     options = OptionSerializer(many=True, read_only=True)
-
+    sub_questions = serializers.SerializerMethodField()
     class Meta:
         model = Question
-        fields = ['id', 'type', 'question_text', 'options', 'placeholder', 'max_length',"created_at", "created_by", "updated_at", "updated_by"]
-    
+        fields = ['id', 'question_image', 'question_text', 'category', 'type', 'parent', 'condition_value', 'placeholder', 'max_length', 'options', 'sub_questions']
+        
+    def get_sub_questions(self, obj):
+        # Recursively include subquestions
+        return QuestionSerializer(obj.sub_questions.all(), many=True).data
+        
     def to_representation(self, instance):
         representation = super().to_representation(instance)
 
@@ -270,17 +274,21 @@ class OptionCreateSerializer(serializers.ModelSerializer):
 # Serializer for creating questions with options
 class QuestionCreateSerializer(serializers.ModelSerializer):
     options = OptionCreateSerializer(many=True, required=False)
+    sub_questions = serializers.ListSerializer(
+        child=serializers.DictField(), required=False
+    )
 
     class Meta:
         model = Question
-        fields = ['id', 'question_text', 'category', 'type', 'placeholder', 'max_length', 'options']
+        fields = ['id', 'question_image', 'question_text', 'category', 'type', 'parent', 'condition_value', 'placeholder', 'max_length', 'options', 'sub_questions']
         extra_kwargs = {
-            'placeholder': {'required': False},  # Make placeholder optional
-            'max_length': {'required': False},   # Make max_length optional
+            'placeholder': {'required': False},  
+            'max_length': {'required': False},   
+            'parent': {'required': False},
+            'condition_value': {'required': False}
         }
     
     def validate(self, data):
-        # Ensure 'placeholder' and 'max_length' are optional but allowed for 'description' type
         if data['type'] != 'description' and ('placeholder' in data or 'max_length' in data):
             raise serializers.ValidationError("Only description type questions can have a placeholder or max_length.")
         
@@ -288,52 +296,50 @@ class QuestionCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         options_data = validated_data.pop('options', [])
+        sub_questions_data = validated_data.pop('sub_questions', [])
+
         question = Question.objects.create(**validated_data)
+
         for option_data in options_data:
             Option.objects.create(question=question, **option_data)
-        
+
+        self._create_sub_questions(question, sub_questions_data)
+
         return question
+
+    def _create_sub_questions(self, parent_question, sub_questions_data):
+        for sub_data in sub_questions_data:
+            options_data = sub_data.pop('options', [])
+            nested_sub_questions = sub_data.pop('sub_questions', [])
+
+            sub_question = Question.objects.create(
+                parent=parent_question,
+                **sub_data
+            )
+
+            for option_data in options_data:
+                Option.objects.create(question=sub_question, **option_data)
+
+            if nested_sub_questions:
+                self._create_sub_questions(sub_question, nested_sub_questions)
+
     
     def update(self, instance, validated_data):
-        # Update question fields
-        instance.type = validated_data.get('type', instance.type)
-        instance.question_text = validated_data.get('question_text', instance.question_text)
-        instance.placeholder = validated_data.get('placeholder', instance.placeholder)
-        instance.max_length = validated_data.get('max_length', instance.max_length)
+        options_data = validated_data.pop('options', [])
+        sub_questions_data = validated_data.pop('sub_questions', [])
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
         instance.save()
 
-        # Update or create options
-        options_data = validated_data.get('options', [])
-        current_options = {opt.id: opt for opt in instance.options.all()}
-        processed_option_ids = set()
-
+        instance.options.all().delete()
         for option_data in options_data:
-            option_id = option_data.get('id')
-            option_value = option_data['value']
+            Option.objects.create(question=instance, **option_data)
 
-            if option_id:
-                # Update existing option
-                option = current_options.get(option_id)
-                if option:
-                    option.value = option_value
-                    option.save()
-                    processed_option_ids.add(option.id)
-            else:
-                # Create new option
-                new_option = Option.objects.create(question=instance, value=option_value)
-                processed_option_ids.add(new_option.id)
+        instance.sub_questions.all().delete()
+        self._create_sub_questions(instance, sub_questions_data)
 
-        # Response structure
-        updated_options = [
-            {"id": opt.id, "value": opt.value} for opt in instance.options.all()
-        ]
-        return {
-            "type": instance.type,
-            "question_text": instance.question_text,
-            "placeholder": instance.placeholder,
-            "max_length": instance.max_length,
-            "options": updated_options,
-        }
+        return instance
         
 class QuestionAnswerSerializer(serializers.ModelSerializer):
     question_text = serializers.CharField(source="question.question_text", read_only=True)
