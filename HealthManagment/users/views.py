@@ -30,6 +30,9 @@ from .filters import CustomUserFilter, DietPlanFilter,ExerciseFilter
 import os
 from rest_framework.decorators import action
 from django.shortcuts import get_object_or_404
+from dotenv import load_dotenv
+
+load_dotenv()  # reads .env file
 
 class UserRegistrationAPIView(APIView):
     serializer_class = UserRegistrationSerializer
@@ -161,7 +164,7 @@ class SendOrResendSMSAPIView(GenericAPIView):
 
                 if environment in ['production', 'staging']:
                     send_otp(phone_number)  # Send OTP only in production or staging
-                    return Response({"message": "OTP sent for login.", "is_new_user": False}, status=status.HTTP_200_OK)
+                    return Response({"message": "OTP sent for login.", "is_new_user": user.is_first_login}, status=status.HTTP_200_OK)
                 else:
                     return Response({"message": "OTP sending is disabled in this environment."}, status=status.HTTP_200_OK)
 
@@ -183,7 +186,7 @@ class SendOrResendSMSAPIView(GenericAPIView):
 
                 if environment in ['production', 'staging']:
                     send_otp(phone_number)  # Send OTP only in production or staging
-                    return Response({"message": "OTP sent for registration.", "is_new_user": True}, status=status.HTTP_200_OK)
+                    return Response({"message": "OTP sent for registration.", "is_new_user": user.is_first_login}, status=status.HTTP_200_OK)
                 else:
                     return Response({"message": "OTP sending is disabled in this environment."}, status=status.HTTP_200_OK)
         else:
