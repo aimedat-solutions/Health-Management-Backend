@@ -54,6 +54,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'allauth.account.middleware.AccountMiddleware', 
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -132,7 +133,7 @@ SIMPLE_JWT = {
 
 # Internationalization
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Kolkata'
 USE_I18N = True
 USE_TZ = True
 
@@ -149,7 +150,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # API Documentation
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'MHealth App API',
+    'TITLE': 'MHealth APIS',
     'DESCRIPTION': 'MHealth Management API',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
@@ -165,3 +166,4 @@ MSG91_COUNTRY_CODE = config('MSG91_COUNTRY_CODE')
 DECRYPT_KEY = config('DECRYPT_KEY')
 
 DIET_QUESTION_ADD_DAYS = config('DIET_QUESTION_ADD_DAYS')
+QUESTIONS_DAYS = config('QUESTIONS_DAYS')

@@ -40,7 +40,7 @@ class AuditModel(models.Model):
     def save(self, *args, **kwargs):
         """ Automatically set created_by & updated_by fields. """
         user = get_current_user()
-        if not self.pk and not self.created_by:
+        if not self.pk and not self.created_by and hasattr(self, '_request_user'):
             self.created_by = user
         self.updated_by = user
         super().save(*args, **kwargs)
@@ -58,20 +58,21 @@ class CustomUser(AbstractUser, AuditModel):
     """
     phone_number = PhoneNumberField(unique=True, blank=False, null=False)
     role = models.CharField(max_length=10, choices=RoleChoices.choices, default=RoleChoices.PATIENT)
-    assigned_doctor = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_patients", limit_choices_to={"role": RoleChoices.DOCTOR},)
     security_code = models.CharField(max_length=6, blank=True, null=True)  # Store OTP
     is_verified = models.BooleanField(default=False)
     sent = models.DateTimeField(null=True)  # OTP sent time
     is_first_login = models.BooleanField(default=True)
     initial_question_completed = models.BooleanField(default=False)  
+    last_question_answered_at = models.DateField(null=True, blank=True)
     last_diet_question_answered = models.DateTimeField(null=True, blank=True)
     ask_diet_question = models.BooleanField(default=True) 
+    verified = models.BooleanField(default=False)
 
     
     REQUIRED_FIELDS = ['role', 'phone_number']
     
     def __str__(self):
-        return f"{self.role} . {self.username}"
+        return f"{self.role} . {self.phone_number}"
     
     def is_doctor(self):
         return self.role == RoleChoices.DOCTOR
@@ -84,7 +85,7 @@ class CustomUser(AbstractUser, AuditModel):
         Determines if the patient needs to answer diet questions (every 15 days).
         """
         if self.last_diet_question_answered:
-            return now() > self.last_diet_question_answered + timedelta(days=15)
+            return now() > self.last_diet_question_answered + timedelta(days=settings.DIET_QUESTION_ADD_DAYS)
         return True 
     
     def clean(self):
@@ -153,35 +154,39 @@ class CustomUser(AbstractUser, AuditModel):
         
 
 ######################################################################## Excercise Model ################################################################################################
-
-
 class Exercise(AuditModel):
     """
     Stores information about different exercises performed by a patient user.
     """
-    class ExerciseType(models.TextChoices):
-        STRENGTH = 'strength', 'Strength Training'
-        CARDIO = 'cardio', 'Cardio'
-        FLEXIBILITY = 'flexibility', 'Flexibility'
-        BALANCE = 'balance', 'Balance'
-
-    class IntensityLevel(models.TextChoices):
-        LOW = 'low', 'Low'
-        MEDIUM = 'medium', 'Medium'
-        HIGH = 'high', 'High'
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='exercises')
-    exercise_name = models.CharField(max_length=255)
-    type = models.CharField(max_length=50, choices=ExerciseType.choices)
-    duration = models.DurationField()  # e.g., how long they did the exercise
-    intensity = models.CharField(max_length=50, choices=IntensityLevel.choices)
-    calories_burned = models.PositiveIntegerField()
-    date = models.DateField()
-    video_content = models.FileField(upload_to='exercise_videos/', null=True, blank=True)
+    title = models.CharField(max_length=255)
+    description = models.TextField()
     image_content = models.ImageField(upload_to='exercise_images/', null=True, blank=True)
+    video_content = models.FileField(upload_to='exercise_videos/', null=True, blank=True)
 
     def __str__(self):
-        return f"{self.exercise_name} by {self.user.username}"
+        return f"{self.title}"
 
+class ExerciseDate(AuditModel):
+    """
+    Tracks assigned dates for exercises.
+    """
+    exercise = models.ForeignKey(Exercise, on_delete=models.CASCADE, related_name="exercise_dates")
+    doctor = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='assigned_exercises')
+    patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='patient_exercises')
+    date = models.DateField()
+
+    class Meta:
+        unique_together = ("doctor", "patient", "exercise", "date")  
+
+    def __str__(self):
+        return f"{self.exercise.title} -> {self.patient.username} on {self.date}"
+    
+    def save(self, *args, **kwargs):
+        if self.doctor.role != 'doctor':
+            raise ValidationError("Selected doctor must have role 'doctor'")
+        if self.patient.role != 'patient':
+            raise ValidationError("Selected patient must have role 'patient'")
+        super().save(*args, **kwargs)
 class ExerciseStatus(AuditModel):
     """
     Tracks the status of exercises completed, skipped, or pending.
@@ -193,7 +198,7 @@ class ExerciseStatus(AuditModel):
     ]
 
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="exercise_statuses")
-    exercise = models.ForeignKey(Exercise, on_delete=models.CASCADE, related_name="status_entries")
+    exercise = models.ForeignKey(ExerciseDate, on_delete=models.CASCADE, related_name="status_entries")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
     updated_at = models.DateTimeField(auto_now=True)
     reason_audio = models.BinaryField(blank=True, null=True)  # Store audio in binary format
@@ -202,7 +207,7 @@ class ExerciseStatus(AuditModel):
         unique_together = ("user", "exercise")
 
     def __str__(self):
-        return f"{self.user.username} - {self.exercise.exercise_name}: {self.status}"
+        return f"{self.user.username} - {self.exercise.exercise.title}: {self.status}"
     
 class DoctorExerciseResponse(AuditModel):
     """
@@ -231,9 +236,23 @@ class Question(AuditModel):
         ('checkbox', 'Checkbox'),
         ('description', 'Description'),
     ]
+    question_image = models.ImageField(upload_to='questions_images/', null=True, blank=True)
     question_text = models.CharField(max_length=255)
     category = models.CharField(max_length=10, choices=QUESTION_CATEGORIES)
     type = models.CharField(max_length=20, choices=QUESTION_TYPES, null=True, blank=True)
+    parent = models.ForeignKey(
+        'self',
+        null=True,
+        blank=True,
+        related_name='sub_questions',
+        on_delete=models.CASCADE
+    )
+    condition_value = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        help_text="If this is a sub-question, answer of parent that triggers it (e.g., 'yes')"
+    )
     placeholder = models.CharField(max_length=255, null=True, blank=True)
     max_length = models.IntegerField(null=True, blank=True)
 
@@ -242,7 +261,7 @@ class Question(AuditModel):
     
     def save(self, *args, **kwargs):
         """Ensure only 'initial' questions have a type."""
-        if self.category == 'diet':
+        if self.category == 'other':
             self.question_type = None  
         super().save(*args, **kwargs)
 
@@ -253,7 +272,16 @@ class Option(AuditModel):
     id = models.AutoField(primary_key=True) 
     question = models.ForeignKey(Question, related_name='options', on_delete=models.CASCADE)
     value = models.CharField(max_length=100)
-
+    type = models.CharField( 
+        max_length=20,
+        choices=[
+            ('default', 'Default'),
+            ('text', 'Text Input'),
+            ('number', 'Number Input'),
+        ],
+        default='default'
+    )
+   
     def __str__(self):
         return self.value
 
@@ -277,15 +305,16 @@ class Profile(AuditModel):
         MALE = 'male', 'Male'
         FEMALE = 'female', 'Female'
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='profile')
-    first_name = models.CharField(max_length=100)
-    last_name = models.CharField(max_length=100)
+    first_name = models.CharField(null=True, blank=True, max_length=100)
+    last_name = models.CharField(null=True, blank=True, max_length=100)
     date_of_birth = models.DateField(null=True, blank=True)
-    gender = models.CharField(max_length=10,choices=GenderChoices.choices,default=GenderChoices.FEMALE)
+    gender = models.CharField(max_length=10, null=True, blank=True, choices=GenderChoices.choices,default=GenderChoices.FEMALE)
+    occupation = models.CharField(max_length=100, null=True, blank=True)
     address = models.TextField(null=True, blank=True, help_text="Only for patients")  
     specialization = models.CharField(max_length=255, null=True, blank=True, help_text="Only for doctors")  
     profile_image = models.ImageField(upload_to='profile_images/', null=True, blank=True)
     age = models.PositiveIntegerField(null=True, blank=True, help_text="Auto-calculated based on date_of_birth")
-    calories = models.PositiveIntegerField(help_text="Daily calorie intake", null=True, blank=True)
+    month = models.PositiveIntegerField(help_text="Pregnancy month (1–9)", null=True, blank=True)
     height = models.FloatField(help_text="Height in cm", null=True, blank=True)
     weight = models.FloatField(help_text="Weight in kg", null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -346,12 +375,14 @@ class DietPlanMeal(models.Model):
         LUNCH = "lunch", "Lunch"
         DINNER = "dinner", "Dinner"
         SNACKS = "snacks", "Snacks"
-    diet_plan = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="meals")
+    diet_plan = models.ForeignKey(DietPlan, on_delete=models.CASCADE, related_name="meals")
     meal_type = models.CharField(max_length=20, choices=MealType.choices)  
     meal_portions = models.ManyToManyField(MealPortion)
-
+    start_time = models.TimeField(null=True, blank=True, help_text="Start of meal window")
+    end_time = models.TimeField(null=True, blank=True, help_text="End of meal window")
+    
     def __str__(self):
-        return f"{self.meal_type} for {self.diet_plan.username}"
+        return f"{self.meal_type} ({self.start_time}-{self.end_time}) for {self.diet_plan.patient.username}"
     
 class DietPlanStatus(AuditModel):
     """
@@ -365,34 +396,46 @@ class DietPlanStatus(AuditModel):
 
     patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="diet_statuses")
     diet_plan = models.ForeignKey(DietPlanMeal, on_delete=models.CASCADE, related_name="status_entries")
+    date = models.DateField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
     reason_audio = models.BinaryField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ("patient", "diet_plan")
+        unique_together = ("patient", "diet_plan", "date")
 
     def __str__(self):
-        return f"{self.patient.first_name} - {self.diet_plan.MealType}: {self.status}"
+        return f"{self.patient.username} - {self.diet_plan.meal_type} on {self.date}: {self.status}"
    
 class PatientDietQuestion(AuditModel):
     """
-    Tracks dietary habits of a patient.
+    Tracks dietary habits of a patient with optional audio responses.
     """
-    patient = models.OneToOneField(CustomUser, on_delete=models.CASCADE, limit_choices_to={'role': 'patient'})
+    patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, limit_choices_to={'role': 'patient'})
+    date = models.DateField(default=timezone.now)
+
     breakfast = models.TextField(null=True, blank=True)
     lunch = models.TextField(null=True, blank=True)
     eveningSnack = models.TextField(null=True, blank=True)
     dinner = models.TextField(null=True, blank=True)
-    mms = models.CharField(max_length=10, null=True, blank=True)
-    preBreakfast = models.TextField(null=True, blank=True)
+
+    breakfast_audio = models.FileField(upload_to="diet_questions/audio/", null=True, blank=True)
+    lunch_audio = models.FileField(upload_to="diet_questions/audio/", null=True, blank=True)
+    eveningSnack_audio = models.FileField(upload_to="diet_questions/audio/", null=True, blank=True)
+    dinner_audio = models.FileField(upload_to="diet_questions/audio/", null=True, blank=True)
+
     last_diet_update = models.DateField(auto_now=True)
+    class Meta:
+        unique_together = ("patient", "date")
 
     def __str__(self):
         return f"Diet question for {self.patient.username} on {self.last_diet_update}"
-    
+
     def is_due_for_update(self):
-        return self.last_diet_update and timezone.now().date() >= self.last_diet_update + timedelta(days=int(settings.DIET_QUESTION_ADD_DAYS))
+        last_entry = PatientDietQuestion.objects.filter(patient=self.patient).order_by('-date').first()
+        if not last_entry:
+            return True
+        return timezone.now().date() >= last_entry.date + timedelta(days=int(settings.DIET_QUESTION_ADD_DAYS))
     
 
 ######################################################################## LabReport Model ################################################################################################
@@ -406,7 +449,7 @@ class LabReport(AuditModel):
     date_of_report = models.DateField()
 
     def __str__(self):
-        return f"{self.report_name} for {self.patient.first_name} on {self.date_of_report}"
+        return f"{self.report_name} for {self.patient.username} on {self.date_of_report}"
     
     
     
@@ -419,11 +462,8 @@ class HealthStatus(AuditModel):
     patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='health_records')
     blood_pressure = models.CharField(max_length=10, default="120/80")
     calories = models.IntegerField(default=2000)
-    month = models.IntegerField(default=0)
-    weight = models.CharField(max_length=10, default="60 KG")
-    height = models.CharField(max_length=10, default="165 CM")
     points = models.PositiveIntegerField(null=True, blank=True, help_text="Health points")
-    bmi = models.FloatField(default=22.0)
+    bmi = models.FloatField(null=True, blank=True, help_text="Body Mass Index")
     blood_sugar = models.CharField(max_length=20, default="98 mg/dL")
     Colestrol = models.CharField(max_length=20, default="180 mg/dL")
     diet_followed = models.CharField(max_length=10, default="50%")

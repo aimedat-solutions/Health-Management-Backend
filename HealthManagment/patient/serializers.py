@@ -1,18 +1,19 @@
 from rest_framework import serializers
-from users.models import DietPlan, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, DietPlanStatus, ExerciseStatus
+from users.models import ExerciseDate, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, DietPlanStatus, ExerciseStatus,DietPlanMeal,DietPlanDate
 from users.serializers import OptionSerializer
-
+from django.utils import timezone
+from datetime import date
 class EmptyLabReportSerializer(serializers.Serializer):
     message = serializers.SerializerMethodField()
 
     def get_message(self, obj):
-        return "This patient does not have any lab report until now."
+        return "Patients are does not have any lab report until now."
 class DietPlanStatusSerializer(serializers.ModelSerializer):
     reason_audio = serializers.FileField(required=False)
 
     class Meta:
         model = DietPlanStatus
-        fields = ['status', 'reason_audio', 'diet_plan' ]
+        fields = ['status', 'date', 'reason_audio', 'diet_plan']
 
     def create(self, validated_data):
         """Convert audio file to binary before saving"""
@@ -30,16 +31,72 @@ class DietPlanStatusSerializer(serializers.ModelSerializer):
             return base64.b64encode(obj.reason_audio).decode('utf-8')
         return None
 
-class DietPlanSerializer(serializers.ModelSerializer):
+class DietPlanMealSerializer(serializers.ModelSerializer):
+    portions = serializers.SerializerMethodField()
+    time_range = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
     class Meta:
-        model = DietPlan
-        fields = '__all__'
-        
+        model = DietPlanMeal
+        fields = ['id','meal_type', 'time_range', 'portions', 'status']
+
+    def get_portions(self, obj):
+        return [p.name for p in obj.meal_portions.all()]
+    
+    def get_time_range(self, obj):
+        if obj.start_time and obj.end_time:
+            try:
+                return f"{obj.start_time.strftime('%#I %p')} – {obj.end_time.strftime('%#I %p')}"
+            except:
+                return f"{obj.start_time.strftime('%H:%M')} – {obj.end_time.strftime('%H:%M')}"
+        return None
     def get_status(self, obj):
-        """Retrieve the latest diet plan status for the patient"""
-        status_entry = obj.status_entries.order_by('-updated_at').first()
-        return DietPlanStatusSerializer(status_entry).data if status_entry else None
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        date = self.context.get("target_date", timezone.now().date())
+
+        if user and user.is_authenticated:
+            status_obj = DietPlanStatus.objects.filter(
+                patient=user,
+                diet_plan=obj,   # obj is DietPlanMeal
+                date=date
+            ).first()
+
+            return status_obj.status if status_obj else "pending"
+
+        return "pending"
+    
+class DietPlanSerializer(serializers.ModelSerializer):
+    meals = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DietPlanDate
+        fields = ['date', 'meals']
+
+    def get_meals(self, obj):
+        MEAL_ORDER = ['breakfast', 'lunch', 'snacks', 'dinner']
+        all_meals = obj.diet_plan.meals.all()
+        meals_map = {meal.meal_type: meal for meal in all_meals}
+
+        sorted_meals = [
+            meals_map[meal_type]
+            for meal_type in MEAL_ORDER
+            if meal_type in meals_map
+        ]
+
+        return DietPlanMealSerializer(
+            sorted_meals,
+            many=True,
+            context={**self.context, "target_date": obj.date}
+        ).data
+class CurrentMealSerializer(serializers.Serializer):
+    meal_id = serializers.CharField() 
+    meal_type = serializers.CharField()
+    time_window = serializers.CharField()
+    portions = serializers.ListField(child=serializers.CharField())
+    status = serializers.CharField()
+    diet_date = serializers.DateField()
+    
+
     
 class LabReportSerializer(serializers.ModelSerializer):
     message = serializers.SerializerMethodField()
@@ -49,6 +106,11 @@ class LabReportSerializer(serializers.ModelSerializer):
         
     def get_message(self, obj):
         return "Lab report exists for the patient."
+    
+    def create(self, validated_data):
+        validated_data['patient'] = self.context['request'].user
+        validated_data['date_of_report'] = date.today()
+        return super().create(validated_data)
         
 class HealthStatusSerializer(serializers.ModelSerializer):
     class Meta:
@@ -56,12 +118,16 @@ class HealthStatusSerializer(serializers.ModelSerializer):
         fields = '__all__'
 class QuestionSerializer(serializers.ModelSerializer):
     options = OptionSerializer(many=True, read_only=True)
+    sub_questions = serializers.SerializerMethodField()
     class Meta:
         model = Question
         fields = [
-            "id", "question_text", "category", "type", "placeholder", "max_length",
-            "created_at", "updated_at", "created_by", "updated_by", "options"
-        ]
+            "id", "question_image", "question_text", "category", "type", "placeholder", "max_length",
+            "condition_value", "options", "sub_questions"]
+    
+    def get_sub_questions(self, obj):
+        sub_qs = obj.sub_questions.all()
+        return QuestionSerializer(sub_qs, many=True, context=self.context).data
 class PatientResponseSerializer(serializers.ModelSerializer):
     class Meta:
         model = PatientResponse
@@ -85,6 +151,8 @@ class BulkPatientResponseSerializer(serializers.Serializer):
         return data      
 class DietQuestionSerializer(serializers.ModelSerializer):
     ask_diet_question = serializers.SerializerMethodField()
+    last_diet_update = serializers.SerializerMethodField()
+    date = serializers.SerializerMethodField()
     
     class Meta:
         model = PatientDietQuestion
@@ -93,6 +161,15 @@ class DietQuestionSerializer(serializers.ModelSerializer):
     def get_ask_diet_question(self, obj):
         return obj.patient.ask_diet_question
     
+    def get_last_diet_update(self, obj):
+        if obj.last_diet_update:
+            return obj.last_diet_update.date().isoformat() if hasattr(obj.last_diet_update, 'date') else obj.last_diet_update
+        return None
+
+    def get_date(self, obj):
+        if obj.date:
+            return obj.date.date().isoformat() if hasattr(obj.date, 'date') else obj.date
+        return None
 class ExerciseStatusSerializer(serializers.ModelSerializer):
     reason_audio = serializers.FileField(required=False)
 
@@ -115,3 +192,43 @@ class ExerciseStatusSerializer(serializers.ModelSerializer):
             import base64
             return base64.b64encode(obj.reason_audio).decode('utf-8')
         return None
+    
+class AssignedExerciseSerializer(serializers.ModelSerializer):
+    exercise_id = serializers.IntegerField(source='exercise.id')
+    exercise_title = serializers.CharField(source='exercise.title')
+    exercise_description = serializers.CharField(source='exercise.description')
+    image_url = serializers.SerializerMethodField()
+    video_url = serializers.SerializerMethodField()
+    assigned_by = serializers.CharField(source='doctor.first_name')
+    status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ExerciseDate
+        fields = ['id', 'exercise_id', 'exercise_title', 'exercise_description',  'image_url', 'video_url','date', 'assigned_by', 'status']
+        
+    def get_image_url(self, obj):
+        request = self.context.get('request')
+        if obj.exercise.image_content and request:
+            return request.build_absolute_uri(obj.exercise.image_content.url)
+        return None
+
+    def get_video_url(self, obj):
+        request = self.context.get('request')
+        if obj.exercise.video_content and request:
+            return request.build_absolute_uri(obj.exercise.video_content.url)
+        return None
+        
+    def get_status(self, obj):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        date = self.context.get("target_date", timezone.now().date())
+
+        if user and user.is_authenticated:
+            status_obj = ExerciseStatus.objects.filter(
+                user=user,
+                exercise=obj   
+            ).first()
+
+            return status_obj.status if status_obj else "pending"
+
+        return "pending"

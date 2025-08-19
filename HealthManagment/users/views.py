@@ -1,6 +1,6 @@
 from rest_framework import generics, permissions
-from .models import Profile, Question,DietPlan,Exercise, CustomUser,Option,PatientResponse, DietPlanStatus,DoctorExerciseResponse,HealthStatus
-from .serializers import ExerciseSerializer, ProfileSerializer, DietPlanSerializer, DoctorRegistrationSerializer, QuestionSerializer,QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,PhoneNumberSerializer,LabReportSerializer
+from .models import Profile, Question,DietPlan,Exercise, CustomUser,Option,PatientResponse, Exercise,ExerciseDate,HealthStatus
+from .serializers import ExerciseSerializer, ProfileSerializer, ExerciseDateSerializer, DoctorRegistrationSerializer, QuestionSerializer,QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,PhoneNumberSerializer,LabReportSerializer
 from django.db.models import Count,Avg
 from django.contrib.auth.models import Group
 from rest_framework import views, status
@@ -19,8 +19,8 @@ from django.core.exceptions import ObjectDoesNotExist
 from drf_spectacular.utils import extend_schema
 from users.permissions import PermissionsManager,IsSuperAdmin, IsAdmin
 from rest_framework import viewsets
-from rest_framework import serializers
-from rest_framework import generics
+from django.contrib.auth.hashers import make_password
+from django.utils.crypto import get_random_string
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import NotAuthenticated
 from .utils import send_otp, verify_otp
@@ -71,6 +71,8 @@ class CustomLoginView(LoginView):
             'access_token': access_token,
             'refresh_token': refresh_token,
             'is_new_user': user.is_first_login,   
+            'initial_question_completed': user.initial_question_completed,
+            'ask_diet_questions': user.ask_diet_question,
         }
         response_data.update(CustomUserDetailsSerializer(user).data)
         return Response(response_data, status=status.HTTP_200_OK)
@@ -152,7 +154,7 @@ class SendOrResendSMSAPIView(GenericAPIView):
     def post(self, request):
         phone_number = request.data.get("phone_number", None)
         environment = os.getenv('DJANGO_ENV', 'development')
-
+        
         if phone_number:
             try:
                 user = CustomUser.objects.get(phone_number=phone_number)
@@ -164,13 +166,15 @@ class SendOrResendSMSAPIView(GenericAPIView):
                     return Response({"message": "OTP sending is disabled in this environment."}, status=status.HTTP_200_OK)
 
             except CustomUser.DoesNotExist:
+                random_password = get_random_string(length=8)  # You can choose the length
+                hashed_password = make_password(random_password)
                 user = CustomUser(
                     phone_number=phone_number, 
                     role='patient', 
                     username=phone_number, 
                     is_first_login=True, 
-                    password=CustomUser.objects.make_random_password()
                 )
+                user.set_password(hashed_password)
                 user.save()
                 group = Group.objects.get(name=user.role)
                 user.groups.add(group)
@@ -194,21 +198,25 @@ class ProfileAPIView(APIView):
     permission_classes = [PermissionsManager]
     serializer_class = ProfileSerializer
     codename = 'profile'
-
+    
+    def get_object(self):
+        profile, _ = Profile.objects.get_or_create(user=self.request.user)
+        return profile
+    
     def get(self, request):
         """
         Retrieve the profile of the logged-in user.
         """ 
         profile, created = Profile.objects.get_or_create(user=request.user)  # Auto-create if missing
-        serializer = ProfileSerializer(profile)
+        serializer = ProfileSerializer(profile, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def put(self, request):
         """
         Update the profile of the logged-in user.
         """
-        profile, _ = Profile.objects.get_or_create(user=request.user)  # Ensure a profile exists
-        serializer = ProfileSerializer(profile, data=request.data, partial=True)
+        profile = self.get_object()
+        serializer = ProfileSerializer(profile, data=request.data, partial=True)  # allows partial updates
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
@@ -260,10 +268,11 @@ class DoctorDetailView(generics.RetrieveUpdateDestroyAPIView):
  
     
 class DoctorRegistrationAPIView(APIView):
-    permission_classes = [PermissionsManager]
+    # permission_classes = [PermissionsManager]
     serializer_class = DoctorRegistrationSerializer
-    codename = 'user'
+    # codename = 'user'
     def post(self, request):
+        print(request.data)
         serializer = DoctorRegistrationSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
@@ -309,7 +318,24 @@ class ExerciseListCreateView(generics.ListCreateAPIView):
     permission_classes = [PermissionsManager]
     filter_backends = [DjangoFilterBackend]
     filterset_class = ExerciseFilter
+    serch_field = ['title']
     codename = 'exercise'
+    
+    # def get_queryset(self):
+    #     return ExerciseDate.objects.filter(
+    #         exercise__user=self.request.user
+    #     ).select_related("exercise").order_by("date")
+    
+    # def get_serializer_context(self):
+    #     context = super().get_serializer_context()
+    #     date_str = self.request.query_params.get("date")
+    #     if date_str:
+    #         from datetime import datetime
+    #         try:
+    #             context["target_date"] = datetime.strptime(date_str, "%Y-%m-%d").date()
+    #         except ValueError:
+    #             pass
+    #     return context
 
 class ExerciseDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Exercise.objects.all()
@@ -326,9 +352,18 @@ class QuestionAnswerListCreateView(APIView):
     
     def get(self, request):
         """
-        Get all answers by the logged-in user.
+        Get all answers:
+        - If the user is a patient, return their own answers.
+        - If the user is a doctor, return answers from patients assigned to them.
         """
-        answers = PatientResponse.objects.filter(user=request.user)
+        user = request.user
+        if user.role == "patient":
+            answers = PatientResponse.objects.filter(user=user)
+        elif user.role == "doctor":
+            # Assuming reverse FK from User (patients) to doctor is `assigned_doctor`
+            answers = PatientResponse.objects.filter(user=user)
+        else:
+            return Response({"detail": "Unauthorized user."}, status=status.HTTP_403_FORBIDDEN)
         serializer = QuestionAnswerSerializer(answers, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -363,10 +398,10 @@ class DashboardView(APIView):
         response_data = {"role": role}
 
         if role == "doctor":
-            total_patients = CustomUser.objects.filter(role="patient", created_diets__doctor=user).distinct().count()
+            total_patients = CustomUser.objects.filter(role="patient").distinct().count()
             total_diet_plans = DietPlan.objects.filter(doctor=user).count()
             active_patients = CustomUser.objects.filter(
-                role="patient", assigned_diets__doctor=user, healthstatus__status="Improving"
+                role="patient", assigned_diets__doctor=user, 
             ).distinct().count()
 
             patient_engagement_rate = (
@@ -376,13 +411,13 @@ class DashboardView(APIView):
             total_diet_plans_count = DietPlan.objects.filter(doctor=user).count()
             diet_effectiveness = (
                 round(
-                    HealthStatus.objects.filter(user__role="patient", status="Improving").count() /
+                    HealthStatus.objects.filter(patient__role="patient", health_status="Improving").count() /
                     total_diet_plans_count * 100, 2
                 ) if total_diet_plans_count else 0
             )
 
-            total_exercises = Exercise.objects.filter(patient__in=CustomUser.objects.filter(role="patient")).count()
-            completed_exercises = Exercise.objects.filter(patient__in=CustomUser.objects.filter(role="patient")).count()
+            total_exercises = Exercise.objects.filter().count()
+            completed_exercises = ExerciseDate.objects.filter(patient__in=CustomUser.objects.filter(role="patient")).count()
 
             exercise_compliance = (
                 round((completed_exercises / total_exercises) * 100, 2) if total_exercises else 0

@@ -1,7 +1,13 @@
 from django_filters import rest_framework as filters
-from .models import CustomUser, DietPlan, LabReport,Exercise,RoleChoices
+from .models import CustomUser, DietPlan, LabReport,Exercise,RoleChoices,PatientDietQuestion,DietPlanDate,ExerciseDate
 import django_filters
 
+class DietPlanMealFilter(filters.FilterSet):
+    date = filters.DateFilter(field_name="date", lookup_expr="exact")
+
+    class Meta:
+        model = DietPlanDate
+        fields = ['date']
 class DietPlanFilter(filters.FilterSet):
     """
     Filter set for DietPlan model.
@@ -32,20 +38,31 @@ class LabReportFilter(filters.FilterSet):
 class CustomUserFilter(filters.FilterSet):
     role = filters.ChoiceFilter(field_name="role", choices=RoleChoices.choices)
     email = filters.CharFilter(field_name="email", lookup_expr='icontains')
-    first_name = filters.CharFilter(field_name="first_name", lookup_expr='icontains')
-    last_name = filters.CharFilter(field_name="last_name", lookup_expr='icontains')
+    first_name = filters.CharFilter(field_name="profile__first_name", lookup_expr='icontains')
+    last_name = filters.CharFilter(field_name="profile__last_name", lookup_expr='icontains')
+    age = filters.NumberFilter(field_name="profile__age", lookup_expr="exact")
+    age__gte = filters.NumberFilter(field_name="profile__age", lookup_expr="gte")
+    age__lte = filters.NumberFilter(field_name="profile__age", lookup_expr="lte")
 
     class Meta:
         model = CustomUser
-        fields = ['role', 'email', 'first_name', 'last_name']
+        fields = ['role', 'email', 'first_name', 'last_name', 'age', 'age__gte', 'age__lte']
 
-
-class ExerciseFilter(filters.FilterSet):
-    patient_name = filters.CharFilter(field_name="user__username", lookup_expr='icontains')
-    date = filters.DateFilter(field_name="date")
-    date_range = filters.DateFromToRangeFilter(field_name="date")
-    
+class DietPlanMealFilter(filters.FilterSet):
+    date = filters.DateFilter(field_name="date", lookup_expr="exact")
 
     class Meta:
+        model = DietPlanDate
+        fields = ['date']
+class ExerciseFilter(filters.FilterSet):
+    
+    class Meta:
         model = Exercise
-        fields = ['exercise_name', 'type', 'date', 'date_range', 'patient_name']
+        fields = ['title', 'id', 'description']
+        
+class DietQuestionFilter(filters.FilterSet):
+    date = filters.DateFilter(field_name='last_diet_update')
+
+    class Meta:
+        model = PatientDietQuestion
+        fields = ['date']
