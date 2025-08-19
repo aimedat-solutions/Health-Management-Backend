@@ -7,7 +7,7 @@ from .serializers import ( PatientResponseSerializer,EmptyLabReportSerializer, H
                           ExerciseStatusSerializer, AssignedExerciseSerializer)
 from users.permissions import PermissionsManager,IsDoctorUser,IsPatientUser
 from rest_framework import viewsets, permissions,generics,status
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework import serializers
 from users.filters import DietQuestionFilter,DietPlanMealFilter,LabReportFilter,ExerciseFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import OrderingFilter
@@ -117,13 +117,21 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
         - Accepts other questions only after initial questions are completed.
         - Supports single or multiple answers.
         - Example request for POST
-        {
-            "questions": ["1", "2", "3"],
-            "1": "5-7 hours",
-            "2": "First trimester (weeks 1-13)",
-            "3": ["Option A", "Option B"]
-        }
-
+            {
+                "questions": [15, 16, 17, 21, 22,26,29,30,31,32,33,34],
+                "15": "Yes",
+                "16": "5 years",
+                "17": ["Diet/Exercise","Metformin", "Insulin", "Others",{"option_id": 71, "value": "Others", "text": "I take herbal medicine"}],
+                "21": "Yes",
+                "22": ["Diet/Exercise","Metformin", "Insulin", "Others",{"option_id": 71, "value": "Others", "text": "I take herbal medicine"}],
+                "26" :  "Yes",
+                "29" : ["Maternal", "Paternal", "Both", "Siblings"],
+                "30" : "Yes",
+                "31" : "Yes",
+                "32" : ["Metformin", "Others"],
+                "33" : "Yes",
+                "34" : "2 weeks"
+            }
         """
         user = request.user
         data = request.data
@@ -132,20 +140,18 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         question_ids = serializer.validated_data["questions"]
-        questions = Question.objects.filter(id__in=question_ids)
+        questions = Question.objects.filter(id__in=question_ids).prefetch_related("options", "sub_questions")
         initial_questions = questions.filter(category="initial")
         other_questions = questions.filter(category="other")
 
         if not user.initial_question_completed and other_questions.exists():
-            return Response(
-                {"message": "You must complete all initial questions before answering other questions."},
-                status=status.HTTP_400_BAD_REQUEST
+            raise serializers.ValidationError(
+                "You must complete all initial questions before answering other questions."
             )
 
         if user.initial_question_completed and initial_questions.exists():
-            return Response(
-                {"message": "Initial questions already completed. You can now only answer other questions."},
-                status=status.HTTP_400_BAD_REQUEST
+            raise serializers.ValidationError(
+                "Initial questions already completed. You can now only answer other questions."
             )
 
         responses_to_create = []
@@ -155,21 +161,57 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
 
             if isinstance(response_value, list):
                 for val in response_value:
-                    selected_option = Option.objects.filter(question=question, value=val).first()
-                    responses_to_create.append(PatientResponse(
-                        user=user,
-                        question=question,
-                        selected_option=selected_option if selected_option else None,
-                        response_text=None if selected_option else val
-                    ))
+                    if isinstance(val, dict) and "option_id" in val:
+                        # Option with extra text
+                        selected_option = Option.objects.filter(
+                            id=val["option_id"], question=question
+                        ).first()
+                        responses_to_create.append(
+                            PatientResponse(
+                                user=user,
+                                question=question,
+                                selected_option=selected_option,
+                                response_text=val.get("text", None)
+                            )
+                        )
+                    else:
+                        selected_option = Option.objects.filter(
+                            question=question, value=val
+                        ).first()
+                        responses_to_create.append(
+                            PatientResponse(
+                                user=user,
+                                question=question,
+                                selected_option=selected_option if selected_option else None,
+                                response_text=None if selected_option else val
+                            )
+                        )
+
             else:
-                selected_option = Option.objects.filter(question=question, value=response_value).first()
-                responses_to_create.append(PatientResponse(
-                    user=user,
-                    question=question,
-                    selected_option=selected_option if selected_option else None,
-                    response_text=None if selected_option else response_value
-                ))
+                if isinstance(response_value, dict) and "option_id" in response_value:
+                    selected_option = Option.objects.filter(
+                        id=response_value["option_id"], question=question
+                    ).first()
+                    responses_to_create.append(
+                        PatientResponse(
+                            user=user,
+                            question=question,
+                            selected_option=selected_option,
+                            response_text=response_value.get("text", None)
+                        )
+                    )
+                else:
+                    selected_option = Option.objects.filter(
+                        question=question, value=response_value
+                    ).first()
+                    responses_to_create.append(
+                        PatientResponse(
+                            user=user,
+                            question=question,
+                            selected_option=selected_option if selected_option else None,
+                            response_text=None if selected_option else response_value
+                        )
+                    )
 
         PatientResponse.objects.bulk_create(responses_to_create)
 
@@ -186,6 +228,7 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
                 user.save()
 
         return Response({"message": "Responses saved successfully!"}, status=status.HTTP_201_CREATED)
+    
 class InitialQuestionsView(generics.ListAPIView):
     serializer_class = QuestionSerializer
     permission_classes =[PermissionsManager]
@@ -199,7 +242,7 @@ class InitialQuestionsView(generics.ListAPIView):
         today = timezone.now().date()
 
         if user_status.is_first_login and not user_status.initial_question_completed:
-            queryset = Question.objects.filter(category="initial")
+            queryset = Question.objects.filter(category="initial", parent__isnull=True)
             serializer = self.get_serializer(queryset, many=True)
             return Response(serializer.data)
 

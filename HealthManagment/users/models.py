@@ -240,6 +240,19 @@ class Question(AuditModel):
     question_text = models.CharField(max_length=255)
     category = models.CharField(max_length=10, choices=QUESTION_CATEGORIES)
     type = models.CharField(max_length=20, choices=QUESTION_TYPES, null=True, blank=True)
+    parent = models.ForeignKey(
+        'self',
+        null=True,
+        blank=True,
+        related_name='sub_questions',
+        on_delete=models.CASCADE
+    )
+    condition_value = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        help_text="If this is a sub-question, answer of parent that triggers it (e.g., 'yes')"
+    )
     placeholder = models.CharField(max_length=255, null=True, blank=True)
     max_length = models.IntegerField(null=True, blank=True)
 
@@ -259,7 +272,16 @@ class Option(AuditModel):
     id = models.AutoField(primary_key=True) 
     question = models.ForeignKey(Question, related_name='options', on_delete=models.CASCADE)
     value = models.CharField(max_length=100)
-
+    type = models.CharField( 
+        max_length=20,
+        choices=[
+            ('default', 'Default'),
+            ('text', 'Text Input'),
+            ('number', 'Number Input'),
+        ],
+        default='default'
+    )
+   
     def __str__(self):
         return self.value
 
@@ -287,6 +309,7 @@ class Profile(AuditModel):
     last_name = models.CharField(null=True, blank=True, max_length=100)
     date_of_birth = models.DateField(null=True, blank=True)
     gender = models.CharField(max_length=10, null=True, blank=True, choices=GenderChoices.choices,default=GenderChoices.FEMALE)
+    occupation = models.CharField(max_length=100, null=True, blank=True)
     address = models.TextField(null=True, blank=True, help_text="Only for patients")  
     specialization = models.CharField(max_length=255, null=True, blank=True, help_text="Only for doctors")  
     profile_image = models.ImageField(upload_to='profile_images/', null=True, blank=True)

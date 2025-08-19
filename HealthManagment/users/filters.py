@@ -38,12 +38,15 @@ class LabReportFilter(filters.FilterSet):
 class CustomUserFilter(filters.FilterSet):
     role = filters.ChoiceFilter(field_name="role", choices=RoleChoices.choices)
     email = filters.CharFilter(field_name="email", lookup_expr='icontains')
-    first_name = filters.CharFilter(field_name="first_name", lookup_expr='icontains')
-    last_name = filters.CharFilter(field_name="last_name", lookup_expr='icontains')
+    first_name = filters.CharFilter(field_name="profile__first_name", lookup_expr='icontains')
+    last_name = filters.CharFilter(field_name="profile__last_name", lookup_expr='icontains')
+    age = filters.NumberFilter(field_name="profile__age", lookup_expr="exact")
+    age__gte = filters.NumberFilter(field_name="profile__age", lookup_expr="gte")
+    age__lte = filters.NumberFilter(field_name="profile__age", lookup_expr="lte")
 
     class Meta:
         model = CustomUser
-        fields = ['role', 'email', 'first_name', 'last_name']
+        fields = ['role', 'email', 'first_name', 'last_name', 'age', 'age__gte', 'age__lte']
 
 class DietPlanMealFilter(filters.FilterSet):
     date = filters.DateFilter(field_name="date", lookup_expr="exact")
