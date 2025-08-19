@@ -361,7 +361,7 @@ class QuestionAnswerListCreateView(APIView):
             answers = PatientResponse.objects.filter(user=user)
         elif user.role == "doctor":
             # Assuming reverse FK from User (patients) to doctor is `assigned_doctor`
-            answers = PatientResponse.objects.filter(user__assigned_doctor=user)
+            answers = PatientResponse.objects.filter(user=user)
         else:
             return Response({"detail": "Unauthorized user."}, status=status.HTTP_403_FORBIDDEN)
         serializer = QuestionAnswerSerializer(answers, many=True)
@@ -398,7 +398,7 @@ class DashboardView(APIView):
         response_data = {"role": role}
 
         if role == "doctor":
-            total_patients = CustomUser.objects.filter(role="patient", assigned_doctor=user).distinct().count()
+            total_patients = CustomUser.objects.filter(role="patient").distinct().count()
             total_diet_plans = DietPlan.objects.filter(doctor=user).count()
             active_patients = CustomUser.objects.filter(
                 role="patient", assigned_diets__doctor=user, 
@@ -416,8 +416,8 @@ class DashboardView(APIView):
                 ) if total_diet_plans_count else 0
             )
 
-            total_exercises = Exercise.objects.filter(user__in=CustomUser.objects.filter(role="patient")).count()
-            completed_exercises = Exercise.objects.filter(user__in=CustomUser.objects.filter(role="patient")).count()
+            total_exercises = Exercise.objects.filter().count()
+            completed_exercises = ExerciseDate.objects.filter(patient__in=CustomUser.objects.filter(role="patient")).count()
 
             exercise_compliance = (
                 round((completed_exercises / total_exercises) * 100, 2) if total_exercises else 0

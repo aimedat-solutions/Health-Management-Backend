@@ -9,19 +9,30 @@ class HealthStatusSerializer(serializers.ModelSerializer):
 class PatientSerializer(serializers.ModelSerializer):
     profileImage = serializers.SerializerMethodField()
     height = serializers.SerializerMethodField()
+    weight = serializers.SerializerMethodField()
+    month = serializers.SerializerMethodField()
     name = serializers.SerializerMethodField()
     age = serializers.SerializerMethodField()
     healthData = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomUser
-        fields = ["id", "profileImage", "height", "name", "age", "healthData"]
+        fields = ["id", "profileImage", "name", "month", "age", "height","weight", "healthData"]
 
     def get_profileImage(self, obj):
-        return obj.profile.profile_image.url if obj.profile.profile_image else None
+        request = self.context.get('request')
+        if obj.profile.profile_image and request:
+            return request.build_absolute_uri(obj.profile.profile_image.url)
+        return None
     
     def get_height(self, obj):
         return obj.profile.height if obj.profile.height else None
+    
+    def get_month(self, obj):
+        return obj.profile.month if obj.profile.month else None
+    
+    def get_weight(self, obj):
+        return obj.profile.weight if obj.profile.weight else None
     
     def get_name(self, obj):
         return f"{obj.profile.first_name} {obj.profile.last_name}".strip()
@@ -116,7 +127,7 @@ class DietPlanCreateSerializer(serializers.ModelSerializer):
 class DietPlanReadSerializer(serializers.ModelSerializer):
     meals = DietPlanMealSerializer(many=True, read_only=True)
     dates = serializers.SerializerMethodField()
-    patient_name = serializers.CharField(source="patient.first_name", read_only=True)
+    patient_name = serializers.CharField(source="patient.profile.first_name", read_only=True)
 
     class Meta:
         model = DietPlan
