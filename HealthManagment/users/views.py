@@ -207,13 +207,10 @@ class ProfileAPIView(APIView):
         return profile
     
     def get(self, request):
-        """
-        Retrieve the profile of the logged-in user.
-        """ 
-        profile, created = Profile.objects.get_or_create(user=request.user)  # Auto-create if missing
-        serializer = ProfileSerializer(profile, context={'request': request})
+        profile = self.get_object()
+        serializer = self.serializer_class(profile, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
-
+    
     def put(self, request):
         """
         Update the profile of the logged-in user.
@@ -222,6 +219,7 @@ class ProfileAPIView(APIView):
         serializer = ProfileSerializer(profile, data=request.data, partial=True)  # allows partial updates
         if serializer.is_valid():
             serializer.save()
+            serializer = self.serializer_class(profile, context={'request': request})
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     

@@ -132,13 +132,22 @@ class ProfileSerializer(serializers.ModelSerializer):
     phone_number = serializers.CharField(source='user.phone_number', read_only=True)
     profile_image = serializers.ImageField(required=False, allow_null=True)
     verified = serializers.BooleanField(source='user.verified', read_only=True)
+    lmp_date = serializers.DateField(required=False, allow_null=True) 
+    pregnancy_details = serializers.SerializerMethodField()
     class Meta:
         model = Profile
         fields = [
-            'id', 'first_name', 'last_name', 'date_of_birth', 'age', 'gender', 'occupation',
-            'address', 'specialization', 'profile_image', 'month', 
-            'height', 'weight', 'role', 'phone_number', 'verified',
+            'id', 'role', 'phone_number', 'first_name', 'last_name', 'profile_image', 'date_of_birth', 'age', 'gender', 'occupation',
+            'address', 'specialization', 'height', 'weight', 'verified',
+            'lmp_date', 'pregnancy_details',
         ]
+    
+    def get_pregnancy_details(self, obj):
+        return {
+            "gestational_age": obj.gestational_age,
+            "edd": obj.edd,
+            "month": obj.pregnancy_month
+        }
         
     def to_representation(self, instance):
         data = super().to_representation(instance)
