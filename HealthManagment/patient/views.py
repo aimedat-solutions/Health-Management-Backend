@@ -256,14 +256,14 @@ class InitialQuestionsView(generics.ListAPIView):
             )
 
             if not last_other_answer:
-                queryset = Question.objects.filter(category="other")
+                queryset = Question.objects.filter(category="other", parent__isnull=True)
                 serializer = self.get_serializer(queryset, many=True)
                 return Response(serializer.data)
 
             last_answer_date = last_other_answer.date()
 
             if today >= last_answer_date + interval:
-                queryset = Question.objects.filter(category="other")
+                queryset = Question.objects.filter(category="other", parent__isnull=True)
                 serializer = self.get_serializer(queryset, many=True)
                 return Response(serializer.data)
 
