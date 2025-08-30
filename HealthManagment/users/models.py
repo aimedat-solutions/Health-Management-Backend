@@ -11,6 +11,7 @@ from django.core.exceptions import ValidationError
 from .middleware import get_current_user
 from datetime import timedelta, date
 from django.utils.timezone import now
+from dateutil.relativedelta import relativedelta
 
 ######################################################################## Custom User Model ################################################################################################
 class AuditModel(models.Model):
@@ -313,20 +314,51 @@ class Profile(AuditModel):
     address = models.TextField(null=True, blank=True, help_text="Only for patients")  
     specialization = models.CharField(max_length=255, null=True, blank=True, help_text="Only for doctors")  
     profile_image = models.ImageField(upload_to='profile_images/', null=True, blank=True)
-    age = models.PositiveIntegerField(null=True, blank=True, help_text="Auto-calculated based on date_of_birth")
-    month = models.PositiveIntegerField(help_text="Pregnancy month (1–9)", null=True, blank=True)
     height = models.FloatField(help_text="Height in cm", null=True, blank=True)
     weight = models.FloatField(help_text="Weight in kg", null=True, blank=True)
+    lmp_date = models.DateField(null=True, blank=True, help_text="Last Menstrual Period")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
     @property
     def age(self):
+        """Calculate age from date_of_birth."""
         if self.date_of_birth:
             today = date.today()
             return today.year - self.date_of_birth.year - (
                 (today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day)
             )
+        return None
+    
+    @property
+    def pregnancy_month(self):
+        """
+        Pregnancy month based on LMP (1–9)
+        """
+        if self.lmp_date:
+            delta_days = (date.today() - self.lmp_date).days
+            month = (delta_days // 28) + 1
+            return min(month, 9)  # max 9 months
+        return None
+
+    @property
+    def gestational_age(self):
+        """
+        Gestational Age (weeks & days) = From LMP to today
+        Returns string like '8 weeks 6 days'
+        """
+        if self.lmp_date:
+            delta = date.today() - self.lmp_date
+            weeks = delta.days // 7
+            days = delta.days % 7
+            return f"{weeks} weeks {days} days"
+        return None
+    
+    @property
+    def edd(self):
+        """Expected Date of Delivery (EDD) = LMP + 9 months + 7 days (standard)."""
+        if self.lmp_date:
+            return self.lmp_date + relativedelta(months=9, days=7)
         return None
     
     def __str__(self):
