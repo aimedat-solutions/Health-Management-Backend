@@ -277,7 +277,7 @@ class Option(AuditModel):
         max_length=20,
         choices=[
             ('default', 'Default'),
-            ('text', 'Text Input'),
+            ('description', 'Description'),
             ('number', 'Number Input'),
         ],
         default='default'
