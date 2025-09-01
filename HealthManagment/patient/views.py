@@ -113,25 +113,24 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
     
     def create(self, request, *args, **kwargs):
         """
+        Handles patient responses:
         - Accepts initial questions only once.
         - Accepts other questions only after initial questions are completed.
         - Supports single or multiple answers.
-        - Example request for POST
-            {
-                "questions": [15, 16, 17, 21, 22,26,29,30,31,32,33,34],
-                "15": "Yes",
-                "16": "5 years",
-                "17": ["Diet/Exercise","Metformin", "Insulin", "Others",{"option_id": 71, "value": "Others", "text": "I take herbal medicine"}],
-                "21": "Yes",
-                "22": ["Diet/Exercise","Metformin", "Insulin", "Others",{"option_id": 71, "value": "Others", "text": "I take herbal medicine"}],
-                "26" :  "Yes",
-                "29" : ["Maternal", "Paternal", "Both", "Siblings"],
-                "30" : "Yes",
-                "31" : "Yes",
-                "32" : ["Metformin", "Others"],
-                "33" : "Yes",
-                "34" : "2 weeks"
-            }
+        - Ensures 'text' type options require text input.
+        - All-or-nothing save: if any error, no responses are saved.
+        - Example : {
+                        "questions": [15, 16, 17, 21, 22,26,29,30,31,32,33,34], 
+                        "15": "Yes", 
+                        "16": "5 years", 
+                        "17": ["Diet/Exercise","Metformin", "Insulin", {"option_id": 71, "value": "Others", "text": "I take herbal medicine"}], 
+                        "21": "Yes", "22": ["Diet/Exercise","Metformin", "Insulin", {"option_id": 71, "value": "Others", "text": "I take herbal medicine"}], 
+                        "26" : "Yes", "29" : ["Maternal", "Paternal", "Both", "Siblings"], 
+                        "30" : "Yes", "31" : "Yes", 
+                        "32" : ["Metformin", "Others"],
+                        "33" : "Yes",
+                        "34" : "2 weeks"
+                    }
         """
         user = request.user
         data = request.data
@@ -140,10 +139,11 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         question_ids = serializer.validated_data["questions"]
-        questions = Question.objects.filter(id__in=question_ids).prefetch_related("options", "sub_questions")
+        questions = Question.objects.filter(id__in=question_ids).prefetch_related("options")
         initial_questions = questions.filter(category="initial")
         other_questions = questions.filter(category="other")
 
+        # Check initial/other question rules
         if not user.initial_question_completed and other_questions.exists():
             raise serializers.ValidationError(
                 "You must complete all initial questions before answering other questions."
@@ -154,81 +154,81 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
                 "Initial questions already completed. You can now only answer other questions."
             )
 
+        saved_responses = []
+        errors = []
         responses_to_create = []
+
         for question in questions:
             q_id = str(question.id)
             response_value = data.get(q_id)
+            if q_id in [str(q) for q in question_ids] and response_value is None:
+                errors.append({
+                    "question_id": question.id,
+                    "message": "Answer required but not provided"
+                })
+                continue
+            if response_value is None:
+                continue
 
-            if isinstance(response_value, list):
-                for val in response_value:
-                    if isinstance(val, dict) and "option_id" in val:
-                        # Option with extra text
-                        selected_option = Option.objects.filter(
-                            id=val["option_id"], question=question
-                        ).first()
-                        responses_to_create.append(
-                            PatientResponse(
-                                user=user,
-                                question=question,
-                                selected_option=selected_option,
-                                response_text=val.get("text", None)
-                            )
-                        )
-                    else:
-                        selected_option = Option.objects.filter(
-                            question=question, value=val
-                        ).first()
-                        responses_to_create.append(
-                            PatientResponse(
-                                user=user,
-                                question=question,
-                                selected_option=selected_option if selected_option else None,
-                                response_text=None if selected_option else val
-                            )
-                        )
-
-            else:
-                if isinstance(response_value, dict) and "option_id" in response_value:
-                    selected_option = Option.objects.filter(
-                        id=response_value["option_id"], question=question
-                    ).first()
-                    responses_to_create.append(
-                        PatientResponse(
-                            user=user,
-                            question=question,
-                            selected_option=selected_option,
-                            response_text=response_value.get("text", None)
-                        )
-                    )
+            if not isinstance(response_value, list):
+                response_value = [response_value]
+            for val in response_value:
+                if isinstance(val, dict) and "option_id" in val:
+                    selected_option = Option.objects.filter(id=val["option_id"], question=question).first()
+                    text_value = val.get("text")
                 else:
-                    selected_option = Option.objects.filter(
-                        question=question, value=response_value
-                    ).first()
-                    responses_to_create.append(
-                        PatientResponse(
-                            user=user,
-                            question=question,
-                            selected_option=selected_option if selected_option else None,
-                            response_text=None if selected_option else response_value
-                        )
+                    selected_option = Option.objects.filter(question=question, value=val).first()
+                    text_value = None
+                # If option requires text but text is missing, register error
+                if selected_option and selected_option.type == "text" and not text_value:
+                    errors.append({
+                        "question_id": question.id,
+                        "option_id": selected_option.id,
+                        "message": "Text required for this option"
+                    })
+                # Prepare valid responses for bulk create
+                responses_to_create.append(
+                    PatientResponse(
+                        user=user,
+                        question=question,
+                        selected_option=selected_option,
+                        response_text=text_value if text_value else (None if selected_option else val)
                     )
-
-        PatientResponse.objects.bulk_create(responses_to_create)
-
+                )
+                saved_responses.append({
+                    "question_id": question.id,
+                    "option_id": selected_option.id if selected_option else None,
+                    "response_text": text_value if text_value else (None if selected_option else val)
+                })
+        # Validate that all main initial questions are answered
         if not user.initial_question_completed:
-            total_initial = Question.objects.filter(category="initial").count()
-            answered_initial = PatientResponse.objects.filter(
-                user=user, question__category="initial"
-            ).values_list("question", flat=True).distinct().count()
+            total_initial = Question.objects.filter(category="initial", parent__isnull=True)
+            required_main_ids = [q.id for q in total_initial]
+            answered_main_ids = [int(q) for q in data.get("questions", []) if int(q) in required_main_ids]
+            missing_ids = set(required_main_ids) - set(answered_main_ids)
+            if missing_ids:
+                errors.append({
+                    "message": "Please answer all main questions.",
+                    "missing_questions": list(missing_ids)
+                })
+        # **All-or-nothing save**
+        if errors:
+            return Response({
+                "message": "Errors found, no responses saved.",
+                "errors": errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        # Save all valid responses
+        PatientResponse.objects.bulk_create(responses_to_create)
+        # Update user flags
+        user.initial_question_completed = True
+        user.is_first_login = False
+        user.last_question_answered_at = timezone.now().date()
+        user.save()
+        return Response({
+            "message": "All responses saved successfully!",
+            # "saved_responses": saved_responses
+        }, status=status.HTTP_201_CREATED)
 
-            if answered_initial >= total_initial:
-                user.initial_question_completed = True
-                user.is_first_login = False
-                user.last_question_answered_at = timezone.now().date()
-                user.save()
-
-        return Response({"message": "Responses saved successfully!"}, status=status.HTTP_201_CREATED)
-    
 class InitialQuestionsView(generics.ListAPIView):
     serializer_class = QuestionSerializer
     permission_classes =[PermissionsManager]
