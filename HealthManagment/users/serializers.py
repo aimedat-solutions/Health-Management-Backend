@@ -8,6 +8,7 @@ from .models import  Question, Profile,DietPlan,Exercise, CustomUser, Option, Pa
 import re,os
 from django.utils.text import slugify
 from rest_framework.exceptions import ValidationError
+from django.utils.crypto import get_random_string
 
 User = get_user_model()
 
@@ -197,8 +198,10 @@ class DoctorRegistrationSerializer(serializers.ModelSerializer):
                 suffix += 1
 
             validated_data['username'] = username
-            validated_data['password'] = CustomUser.objects.make_random_password()
             user = CustomUser.objects.create(**validated_data)
+            random_password = get_random_string(length=8)
+            user.set_password(random_password)
+            user.save()
 
             # Assign to doctor group
             doctor_group = Group.objects.get(name='doctor')
