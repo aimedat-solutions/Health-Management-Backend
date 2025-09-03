@@ -12,9 +12,10 @@ from rest_framework import viewsets, filters, generics
 from django_filters.rest_framework import DjangoFilterBackend
 from users.filters import CustomUserFilter
 from users.pagination import Pagination
-from django.db.models.functions import ExtractYear
+from django.db.models.functions import ExtractMonth, ExtractYear, Now
 from django.db.models import IntegerField, F, ExpressionWrapper
 from django.utils.timezone import now
+from datetime import date
 class PatientManagementViewSet(viewsets.ModelViewSet):
     """
     Allows doctors to view and edit patient details.
@@ -26,16 +27,32 @@ class PatientManagementViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = CustomUserFilter
     search_fields = ['profile__first_name', 'profile__last_name', 'email', 'phone_number']
-    ordering_fields = ['profile__first_name', 'age', 'profile__month', 'date_joined']
-    ordering = ['profile__first_name', 'age', 'profile__month', ] 
+    ordering_fields = ['profile__first_name', 'age', 'birth_month', 'date_joined']
+    ordering = ['profile__first_name', 'age', 'birth_month', ] 
     codename = 'patientmanagement'
     
     def get_queryset(self):
+        today = date.today()
         return (
             CustomUser.objects.filter(role='patient')
             .annotate(
+                # Age
                 age=ExpressionWrapper(
-                    ExtractYear(now()) - ExtractYear(F('profile__date_of_birth')),
+                    ExtractYear(Now()) - ExtractYear(F('profile__date_of_birth')),
+                    output_field=IntegerField()
+                ),
+                # Birth month
+                birth_month=ExtractMonth(F('profile__date_of_birth')),
+
+                # Pregnancy month (approx, based on 28-day cycle)
+                pregnancy_month=ExpressionWrapper(
+                    ((Now() - F('profile__lmp_date')) / 28) + 1,
+                    output_field=IntegerField()
+                ),
+
+                # Gestational age in weeks (integer)
+                gestational_weeks=ExpressionWrapper(
+                    (Now() - F('profile__lmp_date')) / 7,
                     output_field=IntegerField()
                 )
             )
