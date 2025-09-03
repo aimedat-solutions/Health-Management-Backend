@@ -1,49 +1,39 @@
 from rest_framework import serializers
-from users.models import CustomUser, DietPlan, MealPortion, DietPlanDate, DietPlanMeal, DietPlanStatus, HealthStatus,ExerciseDate,DoctorExerciseResponse
+from users.models import CustomUser, Profile, DietPlan, MealPortion, DietPlanDate, DietPlanMeal, DietPlanStatus, HealthStatus,ExerciseDate,DoctorExerciseResponse
 from django.utils import timezone
 class HealthStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = HealthStatus
         fields =  "__all__"
-
-class PatientSerializer(serializers.ModelSerializer):
-    profileImage = serializers.SerializerMethodField()
-    height = serializers.SerializerMethodField()
-    weight = serializers.SerializerMethodField()
-    month = serializers.SerializerMethodField()
-    name = serializers.SerializerMethodField()
-    age = serializers.SerializerMethodField()
-    healthData = serializers.SerializerMethodField()
+        
+class ProfileSerializer(serializers.ModelSerializer):
+    age = serializers.ReadOnlyField()
+    pregnancy_month = serializers.ReadOnlyField()
+    gestational_age = serializers.ReadOnlyField()
+    edd = serializers.ReadOnlyField()
 
     class Meta:
+        model = Profile
+        fields = [
+            "first_name", "last_name", "date_of_birth", "age",
+            "gender", "occupation", "address", "specialization",
+            "profile_image", "height", "weight", "lmp_date",
+            "pregnancy_month", "gestational_age", "edd",
+        ]
+class PatientSerializer(serializers.ModelSerializer):
+    profile = ProfileSerializer(read_only=True)
+    healthData = serializers.SerializerMethodField()
+    class Meta:
         model = CustomUser
-        fields = ["id", "profileImage", "name", "month", "age", "height","weight", "healthData"]
-
-    def get_profileImage(self, obj):
-        request = self.context.get('request')
-        if obj.profile.profile_image and request:
-            return request.build_absolute_uri(obj.profile.profile_image.url)
-        return None
-    
-    def get_height(self, obj):
-        return obj.profile.height if obj.profile.height else None
-    
-    def get_month(self, obj):
-        return obj.profile.month if obj.profile.month else None
-    
-    def get_weight(self, obj):
-        return obj.profile.weight if obj.profile.weight else None
-    
-    def get_name(self, obj):
-        return f"{obj.profile.first_name} {obj.profile.last_name}".strip()
-
-    def get_age(self, obj):
-        return obj.profile.age
+        fields = [
+            "id", "role", "username", "phone_number", "email", "is_verified","is_first_login", "initial_question_completed", "ask_diet_question", 
+            "last_diet_question_answered","last_question_answered_at",
+            "profile", "healthData",
+        ]
 
     def get_healthData(self, obj):
         health_status = HealthStatus.objects.filter(patient=obj).first()
         return HealthStatusSerializer(health_status).data if health_status else {}
-
 
 class MealPortionSerializer(serializers.ModelSerializer):
     class Meta:
