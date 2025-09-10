@@ -75,9 +75,15 @@ class DietPlanDateSerializer(serializers.ModelSerializer):
     class Meta:
         model = DietPlanDate
         fields = "__all__"
-
+class DietPlanMealValueSerializer(serializers.Serializer):
+    meal_portions = serializers.ListField(
+        child=serializers.IntegerField(),  # IDs of MealPortion
+        allow_empty=True
+    )
+    start_time = serializers.TimeField(required=False, allow_null=True)
+    end_time = serializers.TimeField(required=False, allow_null=True)
 class DietPlanCreateSerializer(serializers.ModelSerializer):
-    diet = serializers.DictField(write_only=True)
+    diet = serializers.DictField(child=DietPlanMealValueSerializer(), write_only=True)
     dates = serializers.ListField(child=serializers.DateField(), write_only=True)
 
     class Meta:

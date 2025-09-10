@@ -78,9 +78,10 @@ class PatientManagementViewSet(viewsets.ModelViewSet):
 class MealPortionViewSet(viewsets.ModelViewSet):
     queryset = MealPortion.objects.all()
     serializer_class = MealPortionSerializer
-    permission_classes = [IsAuthenticated, IsSuperAdmin, IsAdmin]
+    permission_classes = [PermissionsManager]
     filter_backends = [filters.SearchFilter]
     search_fields = ["name"]
+    codename = 'mealportion'
 
 class DietPlanViewSet(viewsets.ModelViewSet):
     """
@@ -89,17 +90,22 @@ class DietPlanViewSet(viewsets.ModelViewSet):
     example :
     
             {
-              "patient": 1,
-              "diet": {        
-                        "breakfast":  {
-                        "meal_portions": [1, 2]
-                        },
-                        "lunch":  {  
-                        "meal_portions": [3, 4]
-                        }   
-                        },
-              "dates": ["2025-03-21", "2025-03-22"]
-            }    
+            "patient": 1,
+            "diet": {
+                "breakfast": {
+                "meal_portions": [1, 2],
+                "start_time": "18:00:00",
+                "end_time": "18:30:00"
+                },
+                "lunch": {
+                "meal_portions": [3],
+                "start_time": "18:00:00",
+                "end_time": "18:30:00"
+                }
+            },
+            "dates": ["2025-09-03", "2025-09-04"]
+            }
+    
     """
     queryset = DietPlan.objects.none()
     permission_classes = [PermissionsManager]
