@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from users.models import ExerciseDate, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, DietPlanStatus, ExerciseStatus,DietPlanMeal,DietPlanDate
+from users.models import ExerciseDate, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, DietPlanStatus, ExerciseStatus,DietPlanMeal,DietPlanDate,DietPlanCompletedPortion,ExtraMeal
 from users.serializers import OptionSerializer
 from django.utils import timezone
 from datetime import date
@@ -40,7 +40,7 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
         fields = ['id','meal_type', 'time_range', 'portions', 'status']
 
     def get_portions(self, obj):
-        return [p.name for p in obj.meal_portions.all()]
+        return [{"id": p.id, "name": p.name} for p in obj.meal_portions.all()]
     
     def get_time_range(self, obj):
         if obj.start_time and obj.end_time:
@@ -96,7 +96,24 @@ class CurrentMealSerializer(serializers.Serializer):
     status = serializers.CharField()
     diet_date = serializers.DateField()
     
+class DietPlanStatusSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DietPlanStatus
+        fields = "__all__"
 
+
+class DietPlanCompletedPortionSerializer(serializers.ModelSerializer):
+    portion_name = serializers.CharField(source="portion.name", read_only=True)
+
+    class Meta:
+        model = DietPlanCompletedPortion
+        fields = ["id", "diet_plan_meal", "portion", "portion_name", "date"]
+
+
+class ExtraMealSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExtraMeal
+        fields = "__all__"
     
 class LabReportSerializer(serializers.ModelSerializer):
     message = serializers.SerializerMethodField()
