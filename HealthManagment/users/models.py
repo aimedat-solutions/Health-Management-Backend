@@ -438,6 +438,31 @@ class DietPlanStatus(AuditModel):
 
     def __str__(self):
         return f"{self.patient.username} - {self.diet_plan.meal_type} on {self.date}: {self.status}"
+    
+class DietPlanCompletedPortion(AuditModel):
+    patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="completed_portions")
+    diet_plan_meal = models.ForeignKey(DietPlanMeal, on_delete=models.CASCADE, related_name="completed_portions")
+    portion = models.ForeignKey(MealPortion, on_delete=models.CASCADE, related_name="completed_by_patients")
+    date = models.DateField()
+
+    class Meta:
+        unique_together = ("patient", "diet_plan_meal", "portion", "date")
+
+    def __str__(self):
+        return f"{self.patient.username} ate {self.portion.name} ({self.diet_plan_meal.meal_type}) on {self.date}"
+
+
+class ExtraMeal(AuditModel):
+    patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="extra_meals")
+    diet_plan_meal = models.ForeignKey(DietPlanMeal, on_delete=models.CASCADE, null=True, blank=True, related_name="extra_items")
+    date = models.DateField()
+    item_name = models.CharField(max_length=255, null=True, blank=True)
+    quantity = models.CharField(max_length=100, null=True, blank=True)
+    notes = models.TextField(null=True, blank=True)
+    audio_entry = models.FileField(null=True, blank=True)  # optional audio
+
+    def __str__(self):
+        return f"{self.patient.username} extra meal on {self.date}"
    
 class PatientDietQuestion(AuditModel):
     """

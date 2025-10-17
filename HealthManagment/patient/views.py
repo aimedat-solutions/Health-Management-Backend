@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from users.models import ExerciseDate, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, Option, DietPlanStatus,Exercise,ExerciseStatus,HealthStatus,DietPlanDate,DietPlanMeal,DietPlan
+from users.models import ExerciseDate, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, Option, DietPlanStatus,Exercise,ExerciseStatus,HealthStatus,DietPlanDate,DietPlanMeal,DietPlan,ExtraMeal, DietPlanCompletedPortion,MealPortion
 from .serializers import ( PatientResponseSerializer,EmptyLabReportSerializer, HealthStatusSerializer, LabReportSerializer, 
                           QuestionSerializer, DietQuestionSerializer, DietPlanSerializer, DietPlanStatusSerializer, CurrentMealSerializer, BulkPatientResponseSerializer,
                           ExerciseStatusSerializer, AssignedExerciseSerializer)
@@ -17,6 +17,7 @@ from django.utils.dateparse import parse_date
 from datetime import timedelta,datetime
 from django.conf import settings
 from django.shortcuts import get_object_or_404
+import json
 
 class LabReportViewSet(viewsets.ModelViewSet):
     permission_classes = [PermissionsManager]
@@ -479,46 +480,74 @@ class CompleteSkipDietPlanView(APIView):
         new_status = request.data.get("status")
         date_str = request.data.get("date")
         audio_file = request.FILES.get("audio_reason")
+        selected_portion_ids = request.data.get("selected_portions", [])
+        extra_meals = request.data.get("extra_meals", [])
 
         if not all([diet_plan_meal_id, new_status, date_str]):
-            return Response(
-                {"error": "Fields 'diet_plan', 'status', and 'date' are required."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": "Required fields: diet_plan, status, date,selected_portions"}, status=400)
 
         try:
             target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
         except ValueError:
-            return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=400)
+            return Response({"error": "Invalid date format"}, status=400)
 
         meal = get_object_or_404(DietPlanMeal, id=diet_plan_meal_id)
-
-        is_assigned = DietPlanDate.objects.filter(
-            diet_plan=meal.diet_plan,
-            date=target_date,
-            diet_plan__patient=patient
-        ).exists()
-
-        if not is_assigned:
-            return Response(
-                {"error": "This meal is not assigned to you on the given date."},
-                status=status.HTTP_403_FORBIDDEN
-            )
+        if not DietPlanDate.objects.filter(diet_plan=meal.diet_plan, date=target_date, diet_plan__patient=patient).exists():
+            return Response({"error": "Meal not assigned on this date"}, status=403)
 
         audio_data = audio_file.read() if new_status == "skipped" and audio_file else None
 
+        # Update Status
         status_entry, _ = DietPlanStatus.objects.update_or_create(
             patient=patient,
             diet_plan=meal,
             date=target_date,
-            defaults={
-                "status": new_status,
-                "reason_audio": audio_data
-            }
+            defaults={"status": new_status, "reason_audio": audio_data}
         )
 
+        if new_status == "completed":
+            # Parse JSON if string
+            if isinstance(selected_portion_ids, str):
+                try: selected_portion_ids = json.loads(selected_portion_ids)
+                except: selected_portion_ids = []
+            if isinstance(extra_meals, str):
+                try: extra_meals = json.loads(extra_meals)
+                except: extra_meals = []
+
+            # Clear old portions
+            DietPlanCompletedPortion.objects.filter(patient=patient, diet_plan_meal=meal, date=target_date).delete()
+
+            # Save portions
+            for portion_id in selected_portion_ids:
+                try:
+                    portion = MealPortion.objects.get(id=portion_id)
+                    DietPlanCompletedPortion.objects.create(
+                        patient=patient, diet_plan_meal=meal, portion=portion, date=target_date
+                    )
+                except MealPortion.DoesNotExist:
+                    continue
+
+            # Save extra meals
+            for i, item in enumerate(extra_meals):
+                item_name = item.get("item_name")
+                quantity = item.get("quantity")
+                notes = item.get("notes")
+                audio_field_name = f"extra_audio_{i}"
+                audio_entry = request.FILES[audio_field_name].read() if audio_field_name in request.FILES else None
+                if not any([item_name, audio_entry]):
+                    continue
+                ExtraMeal.objects.create(
+                    patient=patient,
+                    diet_plan_meal=meal,
+                    date=target_date,
+                    item_name=item_name,
+                    quantity=quantity,
+                    notes=notes,
+                    audio_entry=audio_entry
+                )
+
         serializer = DietPlanStatusSerializer(status_entry)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response({"message": "Diet status updated", "data": serializer.data}, status=200)
 
 class CurrentOrNextMealView(APIView):
     permission_classes = [IsAuthenticated]
