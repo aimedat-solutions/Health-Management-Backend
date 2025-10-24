@@ -35,9 +35,10 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
     portions = serializers.SerializerMethodField()
     time_range = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
+    others = serializers.SerializerMethodField()
     class Meta:
         model = DietPlanMeal
-        fields = ['id','meal_type', 'time_range', 'portions', 'status']
+        fields = ['id','meal_type', 'time_range', 'portions', 'status', 'others']
 
     def get_portions(self, obj):
         return [{"id": p.id, "name": p.name} for p in obj.meal_portions.all()]
@@ -49,6 +50,7 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
             except:
                 return f"{obj.start_time.strftime('%H:%M')} – {obj.end_time.strftime('%H:%M')}"
         return None
+    
     def get_status(self, obj):
         request = self.context.get('request')
         user = getattr(request, 'user', None)
@@ -64,6 +66,28 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
             return status_obj.status if status_obj else "pending"
 
         return "pending"
+    
+    def get_others(self, obj):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        date = self.context.get("target_date", timezone.now().date())
+
+        if user:
+            extra_items = ExtraMeal.objects.filter(
+                patient=user,
+                diet_plan_meal=obj,
+                date=date
+            )
+            return [
+                {
+                    "id": e.id,
+                    "item_name": e.item_name,
+                    # "quantity": e.quantity,
+                    # "notes": e.notes,
+                    "audio_entry": bool(e.audio_entry)
+                } for e in extra_items
+            ]
+        return []
     
 class DietPlanSerializer(serializers.ModelSerializer):
     meals = serializers.SerializerMethodField()

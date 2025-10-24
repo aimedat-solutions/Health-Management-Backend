@@ -222,7 +222,7 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
         PatientResponse.objects.bulk_create(responses_to_create)
         # Update user flags
         user.initial_question_completed = True
-        user.is_first_login = False
+        # user.is_first_login = False
         user.last_question_answered_at = timezone.now().date()
         user.save()
         return Response({
@@ -350,16 +350,16 @@ class DietQuestionsView(generics.ListCreateAPIView):
 
         patient_diet, created = PatientDietQuestion.objects.get_or_create(patient=user)
 
-        allowed_days = int(getattr(settings, "DIET_QUESTION_ADD_DAYS", 3))  
-        if not created and patient_diet.last_diet_update >= timezone.now().date() - timedelta(days=allowed_days):
-            return Response({"message": "Diet details already submitted recently."}, status=status.HTTP_400_BAD_REQUEST)
+        # allowed_days = int(getattr(settings, "DIET_QUESTION_ADD_DAYS", 3))  
+        # if not created and patient_diet.last_diet_update >= timezone.now().date() - timedelta(days=allowed_days):
+        #     return Response({"message": "Diet details already submitted recently."}, status=status.HTTP_400_BAD_REQUEST)
 
         diet_fields = ["date", "breakfast", "lunch", "eveningSnack", "dinner", "breakfast_audio", "lunch_audio", "eveningSnack_audio", "dinner_audio"]
         for field in diet_fields:
             setattr(patient_diet, field, request.data.get(field, getattr(patient_diet, field)))
 
         patient_diet.save()
-        user.ask_diet_question = False
+        user.is_first_login = False
         user.save()
 
         return Response(
@@ -474,30 +474,45 @@ class CompleteSkipDietPlanView(APIView):
     codename = 'dietplanstatus'
     
     def post(self, request):
-        """Update diet plan meal status for a specific assigned date"""
+        """Patient updates ONE specific meal (breakfast/lunch/dinner/snack) for a given date"""
         patient = request.user
         diet_plan_meal_id = request.data.get("diet_plan")
         new_status = request.data.get("status")
         date_str = request.data.get("date")
         audio_file = request.FILES.get("audio_reason")
         selected_portion_ids = request.data.get("selected_portions", [])
-        extra_meals = request.data.get("extra_meals", [])
+        extra_meals = request.data.get("others", [])
 
+        # Basic validation
         if not all([diet_plan_meal_id, new_status, date_str]):
-            return Response({"error": "Required fields: diet_plan, status, date,selected_portions"}, status=400)
+            return Response(
+                {"error": "Required fields: diet_plan, status, date, selected_portions"},
+                status=400
+            )
 
+        # Parse date
         try:
             target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
         except ValueError:
             return Response({"error": "Invalid date format"}, status=400)
 
+        # Fetch meal entry
         meal = get_object_or_404(DietPlanMeal, id=diet_plan_meal_id)
-        if not DietPlanDate.objects.filter(diet_plan=meal.diet_plan, date=target_date, diet_plan__patient=patient).exists():
+
+        # Check if patient owns this diet plan + date
+        if not DietPlanDate.objects.filter(
+            diet_plan=meal.diet_plan,
+            date=target_date,
+            diet_plan__patient=patient
+        ).exists():
             return Response({"error": "Meal not assigned on this date"}, status=403)
 
-        audio_data = audio_file.read() if new_status == "skipped" and audio_file else None
+        # Read audio reason only for skipped
+        audio_data = None
+        if new_status == "skipped" and audio_file:
+            audio_data = audio_file.read()
 
-        # Update Status
+        # --- UPDATE STATUS ENTRY ---
         status_entry, _ = DietPlanStatus.objects.update_or_create(
             patient=patient,
             diet_plan=meal,
@@ -505,37 +520,60 @@ class CompleteSkipDietPlanView(APIView):
             defaults={"status": new_status, "reason_audio": audio_data}
         )
 
+        # --- IF COMPLETED: HANDLE PORTIONS + EXTRAS ---
         if new_status == "completed":
-            # Parse JSON if string
+            # Ensure JSON data is parsed
             if isinstance(selected_portion_ids, str):
-                try: selected_portion_ids = json.loads(selected_portion_ids)
-                except: selected_portion_ids = []
+                try:
+                    selected_portion_ids = json.loads(selected_portion_ids)
+                except:
+                    selected_portion_ids = []
+
             if isinstance(extra_meals, str):
-                try: extra_meals = json.loads(extra_meals)
-                except: extra_meals = []
+                try:
+                    extra_meals = json.loads(extra_meals)
+                except:
+                    extra_meals = []
 
-            # Clear old portions
-            DietPlanCompletedPortion.objects.filter(patient=patient, diet_plan_meal=meal, date=target_date).delete()
+            # ✅ Clear previous portions for this meal+date
+            DietPlanCompletedPortion.objects.filter(
+                patient=patient, diet_plan_meal=meal, date=target_date
+            ).delete()
 
-            # Save portions
+            # ✅ Save selected portions
             for portion_id in selected_portion_ids:
                 try:
                     portion = MealPortion.objects.get(id=portion_id)
                     DietPlanCompletedPortion.objects.create(
-                        patient=patient, diet_plan_meal=meal, portion=portion, date=target_date
+                        patient=patient,
+                        diet_plan_meal=meal,
+                        portion=portion,
+                        date=target_date
                     )
                 except MealPortion.DoesNotExist:
                     continue
 
-            # Save extra meals
+            # ✅ Clear previous extra meals (avoid duplicates)
+            ExtraMeal.objects.filter(
+                patient=patient, diet_plan_meal=meal, date=target_date
+            ).delete()
+
+            # ✅ Save new extras
             for i, item in enumerate(extra_meals):
                 item_name = item.get("item_name")
                 quantity = item.get("quantity")
                 notes = item.get("notes")
+
+                # Support audio uploads for extras like "extra_audio_0", "extra_audio_1", etc.
                 audio_field_name = f"extra_audio_{i}"
-                audio_entry = request.FILES[audio_field_name].read() if audio_field_name in request.FILES else None
-                if not any([item_name, audio_entry]):
+                audio_entry = None
+                if audio_field_name in request.FILES:
+                    audio_entry = request.FILES[audio_field_name].read()
+
+                # Skip invalid entries
+                if not (item_name or audio_entry):
                     continue
+
                 ExtraMeal.objects.create(
                     patient=patient,
                     diet_plan_meal=meal,
@@ -547,7 +585,13 @@ class CompleteSkipDietPlanView(APIView):
                 )
 
         serializer = DietPlanStatusSerializer(status_entry)
-        return Response({"message": "Diet status updated", "data": serializer.data}, status=200)
+        return Response(
+            {
+                "message": f"{meal.meal_type.capitalize()} for {date_str} updated successfully",
+                "data": serializer.data
+            },
+            status=200
+        )
 
 class CurrentOrNextMealView(APIView):
     permission_classes = [IsAuthenticated]
