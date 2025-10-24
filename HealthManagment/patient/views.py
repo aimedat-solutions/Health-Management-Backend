@@ -481,7 +481,8 @@ class CompleteSkipDietPlanView(APIView):
         date_str = request.data.get("date")
         audio_file = request.FILES.get("audio_reason")
         selected_portion_ids = request.data.get("selected_portions", [])
-        extra_meals = request.data.get("others", [])
+        others = request.data.get("others", [])
+        others_audio = request.FILES.get("extra_audio")
 
         # Basic validation
         if not all([diet_plan_meal_id, new_status, date_str]):
@@ -508,9 +509,7 @@ class CompleteSkipDietPlanView(APIView):
             return Response({"error": "Meal not assigned on this date"}, status=403)
 
         # Read audio reason only for skipped
-        audio_data = None
-        if new_status == "skipped" and audio_file:
-            audio_data = audio_file.read()
+        audio_data = audio_file.read() if new_status == "skipped" and audio_file else None
 
         # --- UPDATE STATUS ENTRY ---
         status_entry, _ = DietPlanStatus.objects.update_or_create(
@@ -528,12 +527,6 @@ class CompleteSkipDietPlanView(APIView):
                     selected_portion_ids = json.loads(selected_portion_ids)
                 except:
                     selected_portion_ids = []
-
-            if isinstance(extra_meals, str):
-                try:
-                    extra_meals = json.loads(extra_meals)
-                except:
-                    extra_meals = []
 
             # ✅ Clear previous portions for this meal+date
             DietPlanCompletedPortion.objects.filter(
@@ -559,29 +552,13 @@ class CompleteSkipDietPlanView(APIView):
             ).delete()
 
             # ✅ Save new extras
-            for i, item in enumerate(extra_meals):
-                item_name = item.get("item_name")
-                quantity = item.get("quantity")
-                notes = item.get("notes")
-
-                # Support audio uploads for extras like "extra_audio_0", "extra_audio_1", etc.
-                audio_field_name = f"extra_audio_{i}"
-                audio_entry = None
-                if audio_field_name in request.FILES:
-                    audio_entry = request.FILES[audio_field_name].read()
-
-                # Skip invalid entries
-                if not (item_name or audio_entry):
-                    continue
-
+            if others or others_audio:
                 ExtraMeal.objects.create(
                     patient=patient,
                     diet_plan_meal=meal,
                     date=target_date,
-                    item_name=item_name,
-                    quantity=quantity,
-                    notes=notes,
-                    audio_entry=audio_entry
+                    item_name=others,
+                    audio_entry=others_audio.read() if others_audio else None
                 )
 
         serializer = DietPlanStatusSerializer(status_entry)
