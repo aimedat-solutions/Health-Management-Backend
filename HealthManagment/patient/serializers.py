@@ -81,7 +81,7 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
             return [
                 {
                     "id": e.id,
-                    "item_name": e.item_name,
+                    "text": e.item_name,
                     # "quantity": e.quantity,
                     # "notes": e.notes,
                     "audio_entry": bool(e.audio_entry)
