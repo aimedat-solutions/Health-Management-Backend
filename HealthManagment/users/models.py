@@ -430,7 +430,7 @@ class DietPlanStatus(AuditModel):
     diet_plan = models.ForeignKey(DietPlanMeal, on_delete=models.CASCADE, related_name="status_entries")
     date = models.DateField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
-    reason_audio = models.BinaryField(null=True, blank=True)
+    reason_audio = models.FileField(upload_to="skkiped/audio/",null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
