@@ -506,7 +506,7 @@ class CompleteSkipDietPlanView(APIView):
             date=target_date,
             diet_plan__patient=patient
         ).exists():
-            return Response({"error": "Meal not assigned on this date"}, status=403)
+            return Response({"error": "Meal not assigned on this patient/date."}, status=403)
 
         # Read audio reason only for skipped
         audio_data = audio_file.read() if new_status == "skipped" and audio_file else None
@@ -544,7 +544,10 @@ class CompleteSkipDietPlanView(APIView):
                         date=target_date
                     )
                 except MealPortion.DoesNotExist:
-                    continue
+                    return Response(
+                        {"error": f"Portion ID {portion_id} not found."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
 
             # ✅ Clear previous extra meals (avoid duplicates)
             ExtraMeal.objects.filter(
@@ -553,13 +556,19 @@ class CompleteSkipDietPlanView(APIView):
 
             # ✅ Save new extras
             if others or others_audio:
-                ExtraMeal.objects.create(
-                    patient=patient,
-                    diet_plan_meal=meal,
-                    date=target_date,
-                    item_name=others,
-                    audio_entry=others_audio.read() if others_audio else None
-                )
+                try:
+                    ExtraMeal.objects.create(
+                        patient=patient,
+                        diet_plan_meal=meal,
+                        date=target_date,
+                        item_name=others,
+                        audio_entry=others_audio.read() if others_audio else None
+                    )
+                except Exception as e:
+                    return Response(
+                        {"error": f"Error saving extra meal: {str(e)}"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
 
         serializer = DietPlanStatusSerializer(status_entry)
         return Response(
