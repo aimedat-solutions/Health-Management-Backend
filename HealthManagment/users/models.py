@@ -459,7 +459,7 @@ class ExtraMeal(AuditModel):
     item_name = models.CharField(max_length=255, null=True, blank=True)
     quantity = models.CharField(max_length=100, null=True, blank=True)
     notes = models.TextField(null=True, blank=True)
-    audio_entry = models.FileField(null=True, blank=True)  # optional audio
+    audio_entry = models.FileField(upload_to="extrameal/audio/", null=True, blank=True)  # optional audio
 
     def __str__(self):
         return f"{self.patient.username} extra meal on {self.date}"
