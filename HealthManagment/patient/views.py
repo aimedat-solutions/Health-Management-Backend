@@ -18,7 +18,7 @@ from datetime import timedelta,datetime
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 import json
-
+from rest_framework.parsers import MultiPartParser, FormParser
 class LabReportViewSet(viewsets.ModelViewSet):
     permission_classes = [PermissionsManager]
     queryset = LabReport.objects.all()
@@ -470,6 +470,7 @@ class DietPlanView(generics.ListAPIView):
     
 class CompleteSkipDietPlanView(APIView):
     serializer_class = DietPlanStatusSerializer
+    parser_classes = [MultiPartParser, FormParser]
     permission_classes = [PermissionsManager]
     codename = 'dietplanstatus'
     
@@ -562,7 +563,7 @@ class CompleteSkipDietPlanView(APIView):
                         diet_plan_meal=meal,
                         date=target_date,
                         item_name=others,
-                        audio_entry=others_audio.read() if others_audio else None
+                        audio_entry=others_audio if others_audio else None
                     )
                 except Exception as e:
                     return Response(
