@@ -510,7 +510,7 @@ class CompleteSkipDietPlanView(APIView):
             return Response({"error": "Meal not assigned on this patient/date."}, status=403)
 
         # Read audio reason only for skipped
-        audio_data = audio_file.read() if new_status == "skipped" and audio_file else None
+        audio_data = audio_file if new_status == "skipped" and audio_file else None
 
         # --- UPDATE STATUS ENTRY ---
         status_entry, _ = DietPlanStatus.objects.update_or_create(
