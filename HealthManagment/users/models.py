@@ -457,6 +457,7 @@ class ExtraMeal(AuditModel):
     diet_plan_meal = models.ForeignKey(DietPlanMeal, on_delete=models.CASCADE, null=True, blank=True, related_name="extra_items")
     date = models.DateField()
     item_name = models.CharField(max_length=255, null=True, blank=True)
+    image = models.ImageField(upload_to="extrameal/images/", null=True, blank=True)
     quantity = models.CharField(max_length=100, null=True, blank=True)
     notes = models.TextField(null=True, blank=True)
     audio_entry = models.FileField(upload_to="extrameal/audio/", null=True, blank=True)  # optional audio
