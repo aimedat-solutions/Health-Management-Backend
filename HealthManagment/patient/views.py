@@ -484,6 +484,7 @@ class CompleteSkipDietPlanView(APIView):
         selected_portion_ids = request.data.get("selected_portions", [])
         others = request.data.get("others", [])
         others_audio = request.FILES.get("extra_audio")
+        others_image = request.FILES.get("others_image")
 
         # Basic validation
         if not all([diet_plan_meal_id, new_status, date_str]):
@@ -563,7 +564,8 @@ class CompleteSkipDietPlanView(APIView):
                         diet_plan_meal=meal,
                         date=target_date,
                         item_name=others,
-                        audio_entry=others_audio if others_audio else None
+                        audio_entry=others_audio if others_audio else None,
+                        image=others_image if others_image else None, 
                     )
                 except Exception as e:
                     return Response(
