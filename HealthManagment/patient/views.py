@@ -498,6 +498,12 @@ class CompleteSkipDietPlanView(APIView):
             target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
         except ValueError:
             return Response({"error": "Invalid date format"}, status=400)
+        
+        now = datetime.now().date()
+        time_difference = (now - target_date).days
+        if time_difference > 2:
+            return Response({"error": "Editing diet status is allowed only within 48 hours."}, status=403)
+
 
         # Fetch meal entry
         meal = get_object_or_404(DietPlanMeal, id=diet_plan_meal_id)

@@ -145,6 +145,8 @@ class ProfileSerializer(serializers.ModelSerializer):
     
     def get_pregnancy_details(self, obj):
         return {
+            "bmi": obj.bmi or "Not available",
+            "bmi_category": obj.bmi_category or "Not available",
             "gestational_age": obj.gestational_age,
             "edd": obj.edd,
             "month": obj.pregnancy_month

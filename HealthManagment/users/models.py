@@ -331,6 +331,34 @@ class Profile(AuditModel):
         return None
     
     @property
+    def bmi(self):
+        """
+        BMI = Weight (kg) / (Height (m))²
+        """
+        if self.height and self.weight:
+            height_m = self.height / 100 
+            bmi_value = self.weight / (height_m ** 2)
+            return round(bmi_value, 2)
+        return None
+    
+    @property
+    def bmi_category(self):
+        """
+        Returns BMI category based on WHO classification.
+        """
+        bmi = self.bmi
+        if bmi is None:
+            return None
+        if bmi < 18.5:
+            return "Underweight"
+        elif 18.5 <= bmi < 24.9:
+            return "Normal weight"
+        elif 25 <= bmi < 29.9:
+            return "Overweight"
+        else:
+            return "Obese"
+    
+    @property
     def pregnancy_month(self):
         """
         Pregnancy month based on LMP (1–9)
