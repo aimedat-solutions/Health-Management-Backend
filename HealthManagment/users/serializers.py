@@ -4,12 +4,13 @@ from django.contrib.auth import get_user_model
 from phonenumber_field.serializerfields import PhoneNumberField
 from django.contrib.auth.models import Group, Permission
 from .utils import send_otp, verify_otp
-from .models import  Question, Profile,DietPlan,Exercise, CustomUser, Option, PatientResponse,LabReport,DietPlanStatus,ExerciseDate
+from .models import ( DailyStepCount,Question, Profile,DietPlan,Exercise, CustomUser, Option, PatientResponse,
+                    LabReport,DietPlanStatus,ExerciseDate,AppContent,UserLegalConsent,HealthEducation,HelpContent
+                    )
 import re,os
 from django.utils.text import slugify
 from rest_framework.exceptions import ValidationError
 from django.utils.crypto import get_random_string
-
 User = get_user_model()
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -379,3 +380,61 @@ class LabReportSerializer(serializers.ModelSerializer):
         if not value.name.endswith(('.pdf', '.doc', '.docx', '.txt')):
             raise serializers.ValidationError("Only PDF, DOC, DOCX, or TXT files are allowed.")
         return value
+    
+
+class AppContentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AppContent
+        fields = ["id", "content_type", "title", "body", "is_active"]
+        
+class LegalConsentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserLegalConsent
+        fields = ["content_type", "version"]
+
+    def validate(self, data):
+        user = self.context["request"].user
+
+        # Prevent duplicate acceptance of same version
+        if UserLegalConsent.objects.filter(
+            user=user,
+            content_type=data["content_type"],
+            version=data["version"]
+        ).exists():
+            raise serializers.ValidationError(
+                "Consent already accepted for this version."
+            )
+
+        return data
+
+class HealthEducationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = HealthEducation
+        fields = "__all__"
+
+class HelpContentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = HelpContent
+        fields = "__all__"
+
+
+class StepSyncSerializer(serializers.Serializer):
+    date = serializers.DateField()
+    steps = serializers.IntegerField(min_value=0)
+    source = serializers.ChoiceField(
+        choices=["google_fit", "apple_health", "manual"]
+    )
+
+
+class DailyStepSerializer(serializers.ModelSerializer):
+    message = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = DailyStepCount
+        fields = [
+            "date",
+            "steps",
+            "goal_steps",
+            "status",
+            "message",
+        ]

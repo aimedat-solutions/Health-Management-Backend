@@ -1,6 +1,11 @@
 from rest_framework import generics, permissions
-from .models import Profile, Question,DietPlan,Exercise, CustomUser,Option,PatientResponse, Exercise,ExerciseDate,HealthStatus
-from .serializers import ExerciseSerializer, ProfileSerializer, ExerciseDateSerializer, DoctorRegistrationSerializer, QuestionSerializer,QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,PhoneNumberSerializer,LabReportSerializer
+from .models import ( Profile, Question,DietPlan,Exercise, CustomUser,UserLegalConsent,PatientResponse, 
+                    Exercise,ExerciseDate,HealthStatus,AppContent,HealthEducation,HelpContent
+                    )
+from .serializers import ( ExerciseSerializer, ProfileSerializer, HealthEducationSerializer, DoctorRegistrationSerializer, QuestionSerializer,
+                        QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,
+                        PhoneNumberSerializer,HelpContentSerializer,LegalConsentSerializer
+                        )
 from django.db.models import Count,Avg
 from django.contrib.auth.models import Group
 from rest_framework import views, status
@@ -31,7 +36,18 @@ import os
 from rest_framework.decorators import action
 from django.shortcuts import get_object_or_404
 from dotenv import load_dotenv
+from django.utils import timezone
 
+from .models import DailyStepCount
+from .serializers import StepSyncSerializer, DailyStepSerializer,AppContentSerializer
+from .services import (
+    get_trimester,
+    has_diabetes,
+    calculate_step_goal,
+    classify_steps,
+    exercise_completed_today,
+    daily_activity_message
+)
 load_dotenv()  # reads .env file
 
 class UserRegistrationAPIView(APIView):
@@ -487,3 +503,141 @@ class DashboardView(APIView):
             return Response({"error": "Invalid role"}, status=403)
 
         return Response(response_data)
+
+class SyncStepsView(APIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = StepSyncSerializer
+
+    def post(self, request):
+        serializer = StepSyncSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        patient = request.user
+        profile = patient.profile
+
+        steps = serializer.validated_data["steps"]
+        date = serializer.validated_data["date"]
+        source = serializer.validated_data["source"]
+
+        trimester = get_trimester(profile)
+        diabetes = has_diabetes(patient)
+
+        goal = calculate_step_goal(trimester, diabetes)
+        status = classify_steps(steps, goal)
+
+        obj, _ = DailyStepCount.objects.update_or_create(
+            patient=patient,
+            date=date,
+            defaults={
+                "steps": steps,
+                "goal_steps": goal,
+                "source": source,
+                "status": status,
+            }
+        )
+
+        exercise_done = exercise_completed_today(patient)
+
+        return Response({
+            "date": date,
+            "steps": steps,
+            "goal": goal,
+            "status": status,
+            "message": daily_activity_message(status, exercise_done),
+        })
+
+
+class TodayStepsView(APIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = DailyStepSerializer
+
+    def get(self, request):
+        today = timezone.now().date()
+        try:
+            obj = DailyStepCount.objects.get(
+                patient=request.user,
+                date=today
+            )
+            data = DailyStepSerializer(obj).data
+            data["message"] = daily_activity_message(
+                obj.status,
+                exercise_completed_today(request.user)
+            )
+            return Response(data)
+        except DailyStepCount.DoesNotExist:
+            return Response({
+                "date": today,
+                "steps": 0,
+                "goal_steps": 0,
+                "status": "low",
+                "message": "No activity recorded yet today."
+            })
+
+
+class WeeklyStepsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = DailyStepCount.objects.filter(
+            patient=request.user
+        ).order_by("-date")[:7]
+
+        return Response([
+            {"date": s.date, "steps": s.steps}
+            for s in reversed(qs)
+        ])
+
+
+
+class AppContentView(APIView):
+    serializer_class = AppContentSerializer
+    def get(self, request):
+        content_type = request.GET.get("type")
+        qs = AppContent.objects.filter(is_active=True)
+        if content_type:
+            qs = qs.filter(content_type=content_type)
+        serializer = AppContentSerializer(qs, many=True)
+        return Response(serializer.data)
+
+class AcceptLegalView(APIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = LegalConsentSerializer
+
+    def post(self, request):
+        serializer = LegalConsentSerializer(
+            data=request.data,
+            context={"request": request}
+        )
+
+        serializer.is_valid(raise_exception=True)
+
+        UserLegalConsent.objects.create(
+            user=request.user,
+            **serializer.validated_data
+        )
+
+        return Response(
+            {"message": "Legal consent accepted successfully"},
+            status=status.HTTP_201_CREATED
+        )
+
+    
+class HealthEducationView(APIView):
+    serializer_class = HealthEducationSerializer
+    def get(self, request):
+        data = HealthEducation.objects.filter(is_active=True).order_by("order")
+        return Response(HealthEducationSerializer(data, many=True).data)
+    
+class HelpContentView(APIView):
+    serializer_class = HelpContentSerializer
+    def get(self, request):
+        screen = request.query_params.get("screen")
+        content_type = request.query_params.get("type")
+
+        qs = HelpContent.objects.filter(is_active=True)
+        if screen:
+            qs = qs.filter(screen_name=screen)
+        if content_type:
+            qs = qs.filter(content_type=content_type)
+
+        return Response(HelpContentSerializer(qs, many=True).data)
