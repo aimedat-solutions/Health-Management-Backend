@@ -68,6 +68,9 @@ class CustomUser(AbstractUser, AuditModel):
     last_diet_question_answered = models.DateTimeField(null=True, blank=True)
     ask_diet_question = models.BooleanField(default=True) 
     verified = models.BooleanField(default=False)
+    welcome_seen = models.BooleanField(default=False)
+    app_tour_completed = models.BooleanField(default=False)
+
 
     
     REQUIRED_FIELDS = ['role', 'phone_number']
@@ -163,6 +166,11 @@ class Exercise(AuditModel):
     description = models.TextField()
     image_content = models.ImageField(upload_to='exercise_images/', null=True, blank=True)
     video_content = models.FileField(upload_to='exercise_videos/', null=True, blank=True)
+    
+    trimester_min = models.PositiveSmallIntegerField(default=1)
+    trimester_max = models.PositiveSmallIntegerField(default=3)
+    diabetes_safe = models.BooleanField(default=True)
+
 
     def __str__(self):
         return f"{self.title}"
@@ -202,7 +210,8 @@ class ExerciseStatus(AuditModel):
     exercise = models.ForeignKey(ExerciseDate, on_delete=models.CASCADE, related_name="status_entries")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
     updated_at = models.DateTimeField(auto_now=True)
-    reason_audio = models.BinaryField(blank=True, null=True)  # Store audio in binary format
+    reason_audio = models.FileField(upload_to="exercise/audio/", null=True, blank=True)
+
 
     class Meta:
         unique_together = ("user", "exercise")
@@ -231,6 +240,7 @@ class Question(AuditModel):
     QUESTION_CATEGORIES = [
         ("initial", "Initial Question"),
         ("other", "Others"),
+        ("pregnancy_diabetes", "Diabetes in Pregnancy"),
     ]
     QUESTION_TYPES = [
         ('radio', 'Radio'),
@@ -239,7 +249,7 @@ class Question(AuditModel):
     ]
     question_image = models.ImageField(upload_to='questions_images/', null=True, blank=True)
     question_text = models.CharField(max_length=255)
-    category = models.CharField(max_length=10, choices=QUESTION_CATEGORIES)
+    category = models.CharField(max_length=50, choices=QUESTION_CATEGORIES)
     type = models.CharField(max_length=20, choices=QUESTION_TYPES, null=True, blank=True)
     parent = models.ForeignKey(
         'self',
@@ -561,3 +571,112 @@ class HealthStatus(AuditModel):
 
     def __str__(self):
         return f'HealthStatus for {self.patient.role}'
+    
+    
+class DailyStepCount(AuditModel):
+    SOURCE_CHOICES = (
+        ("google_fit", "Google Fit"),
+        ("apple_health", "Apple Health"),
+        ("manual", "Manual"),
+    )
+
+    STATUS_CHOICES = (
+        ("low", "Low"),
+        ("safe", "Safe"),
+        ("high", "High"),
+    )
+
+    patient = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name="daily_steps",
+        limit_choices_to={"role": "patient"}
+    )
+    date = models.DateField()
+    steps = models.PositiveIntegerField()
+    goal_steps = models.PositiveIntegerField()
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES)
+
+    class Meta:
+        unique_together = ("patient", "date")
+        ordering = ["-date"]
+
+    def __str__(self):
+        return f"{self.patient.phone_number} - {self.date} - {self.steps}"
+    
+    def get_trimester(profile):
+        if not profile.pregnancy_month:
+            return None
+        if profile.pregnancy_month <= 3:
+            return 1
+        elif profile.pregnancy_month <= 6:
+            return 2
+        return 3
+
+
+
+class AppContent(AuditModel):
+    CONTENT_TYPES = [
+        ("welcome", "Welcome"),
+        ("quote", "Motivational Quote"),
+        ("disclaimer", "Disclaimer"),
+        ("privacy", "Privacy Policy"),
+        ("terms", "Terms & Legal"),
+    ]
+
+    content_type = models.CharField(max_length=20, choices=CONTENT_TYPES)
+    title = models.CharField(max_length=255, blank=True, null=True)
+    body = models.TextField()
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.content_type
+    
+class HealthEducation(AuditModel):
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    pdf_file = models.FileField(upload_to="health_education/pdf/")
+    order = models.PositiveIntegerField(default=0)
+    category = models.CharField(
+        max_length=100,
+        help_text="nutrition, exercise, insulin, general"
+    )
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.title
+
+class HelpContent(AuditModel):
+    CONTENT_TYPES = [
+        ("app_tour", "App Tour"),
+        ("user_manual", "User Manual"),
+    ]
+
+    screen_name = models.CharField(
+        max_length=100,
+        help_text="home, diet, exercise, profile, general"
+    )
+    content_type = models.CharField(
+        max_length=20,
+        choices=CONTENT_TYPES
+    )
+    title = models.CharField(max_length=255)
+    description = models.TextField()
+    step_order = models.PositiveIntegerField()
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["screen_name", "step_order"]
+
+    def __str__(self):
+        return f"{self.content_type} | {self.screen_name} | {self.step_order}"
+
+class UserLegalConsent(AuditModel):
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    content_type = models.CharField(max_length=20)  # disclaimer/privacy/terms
+    version = models.CharField(max_length=20)
+    accepted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("user", "content_type", "version")
