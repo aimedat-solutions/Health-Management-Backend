@@ -241,11 +241,6 @@ class DietPlanSerializer(serializers.ModelSerializer):
             return status.status if status else "pending"
         return "pending"
 
-class ExerciseDateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ExerciseDate
-        fields = '__all__'
-        
 class ExerciseSerializer(serializers.ModelSerializer):
        class Meta:
         model = Exercise
@@ -254,6 +249,18 @@ class ExerciseSerializer(serializers.ModelSerializer):
             "created_at", "created_by", "updated_at", "updated_by"
         ]
         read_only_fields = ['created_at', 'updated_at']
+
+class ExerciseDateSerializer(serializers.ModelSerializer):
+    exercise_details = ExerciseSerializer(source="exercise", read_only=True)
+    class Meta:
+        model = ExerciseDate
+        fields = [
+            "id",
+            "date",
+            
+            "exercise_details"
+        ]
+        
         
 class OptionSerializer(serializers.ModelSerializer):
     class Meta:

@@ -211,6 +211,7 @@ class ExerciseStatus(AuditModel):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
     updated_at = models.DateTimeField(auto_now=True)
     reason_audio = models.FileField(upload_to="exercise/audio/", null=True, blank=True)
+    calories_burned = models.FloatField(default=0, null=True, blank=True)
 
 
     class Meta:

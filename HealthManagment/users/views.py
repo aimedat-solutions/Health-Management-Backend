@@ -1,6 +1,6 @@
 from rest_framework import generics, permissions
 from .models import ( Profile, Question,DietPlan,Exercise, CustomUser,UserLegalConsent,PatientResponse, 
-                    Exercise,ExerciseDate,HealthStatus,AppContent,HealthEducation,HelpContent
+                    Exercise,ExerciseDate,HealthStatus,AppContent,HealthEducation,HelpContent,ExerciseStatus,DietPlanStatus
                     )
 from .serializers import ( ExerciseSerializer, ProfileSerializer, HealthEducationSerializer, DoctorRegistrationSerializer, QuestionSerializer,
                         QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,
@@ -37,6 +37,7 @@ from rest_framework.decorators import action
 from django.shortcuts import get_object_or_404
 from dotenv import load_dotenv
 from django.utils import timezone
+from datetime import timedelta
 
 from .models import DailyStepCount
 from .serializers import StepSyncSerializer, DailyStepSerializer,AppContentSerializer
@@ -415,46 +416,101 @@ class DashboardView(APIView):
         response_data = {"role": role}
 
         if role == "doctor":
-            total_patients = CustomUser.objects.filter(role="patient").distinct().count()
-            total_diet_plans = DietPlan.objects.filter(doctor=user).count()
-            active_patients = CustomUser.objects.filter(
-                role="patient", assigned_diets__doctor=user, 
-            ).distinct().count()
 
-            patient_engagement_rate = (
-                round((active_patients / total_patients) * 100, 2) if total_patients else 0
-            )
+            # ===== MY PATIENTS ONLY =====
+            patients = CustomUser.objects.filter(
+                role="patient",
+                assigned_diets__doctor=user
+            ).distinct()
 
-            total_diet_plans_count = DietPlan.objects.filter(doctor=user).count()
-            diet_effectiveness = (
-                round(
-                    HealthStatus.objects.filter(patient__role="patient", health_status="Improving").count() /
-                    total_diet_plans_count * 100, 2
-                ) if total_diet_plans_count else 0
-            )
+            total_mothers = patients.count()
 
-            total_exercises = Exercise.objects.filter().count()
-            completed_exercises = ExerciseDate.objects.filter(patient__in=CustomUser.objects.filter(role="patient")).count()
+            # ===== HIGH RISK (from HealthStatus) =====
+            high_risk = HealthStatus.objects.filter(
+                patient__in=patients,
+                health_status__in=["Poor", "Critical"]
+            ).count()
 
-            exercise_compliance = (
-                round((completed_exercises / total_exercises) * 100, 2) if total_exercises else 0
-            )
+            # ===== DUE IN 30 DAYS =====
+            today = date.today()
+            due_soon = Profile.objects.filter(
+                user__in=patients,
+                lmp_date__isnull=False
+            ).filter(
+                lmp_date__lte=today - timedelta(days=240),  # approx 8 months
+            ).count()
+
+            # ===== TRIMESTER DISTRIBUTION =====
+            trimester = {"t1": 0, "t2": 0, "t3": 0}
+
+            for p in Profile.objects.filter(user__in=patients):
+                month = p.pregnancy_month
+                if month:
+                    if month <= 3:
+                        trimester["t1"] += 1
+                    elif month <= 6:
+                        trimester["t2"] += 1
+                    else:
+                        trimester["t3"] += 1
+
+            # ===== TODAY MISSED DIET =====
+            today = timezone.now().date()
+
+            diet_missed = DietPlanStatus.objects.filter(
+                patient__in=patients,
+                date=today,
+                status="skipped"
+            ).count()
+
+            # ===== EXERCISE MISSED =====
+            exercise_missed = ExerciseStatus.objects.filter(
+                user__in=patients,
+                status="skipped",
+                updated_at__date=today
+            ).count()
+
+            # ===== RECENT MOTHERS LIST =====
+            recent_mothers = []
+
+            for p in patients[:10]:
+
+                profile = getattr(p, "profile", None)
+                health = HealthStatus.objects.filter(patient=p).last()
+
+                recent_mothers.append({
+                    "name": p.get_full_name() or p.profile.first_name,
+                    "gestational_age": profile.gestational_age if profile else "NA",
+                    "bp": health.blood_pressure if health else "NA",
+                    "sugar": health.blood_sugar if health else "NA",
+                    "bmi": health.bmi if health else "NA",
+                    "risk": health.health_status if health else "Normal"
+                })
+
+            # ===== RESPONSE =====
 
             response_data.update({
-                "total_patients": total_patients,
-                "total_diet_plans": total_diet_plans,
-                "patient_engagement_rate": patient_engagement_rate,
-                "diet_effectiveness": diet_effectiveness,
-                "exercise_compliance_rate": exercise_compliance,
-            })
+                "active_mothers": total_mothers,
+                "high_risk_cases": high_risk,
+                "due_in_30_days": due_soon,
 
+                "trimester_overview": trimester,
+
+                "diet_missed_today": diet_missed,
+                "exercise_missed_today": exercise_missed,
+
+                "recent_mothers": recent_mothers,
+            })
         elif role == "patient":
             total_diets = DietPlan.objects.filter(patient=user).count()
-            total_exercises = Exercise.objects.filter(user=user).count()
+            total_exercises = ExerciseDate.objects.filter(patient=user).count()
             latest_health_status = HealthStatus.objects.filter(patient=user).order_by("-created_at").first()
-            avg_calories_burned = Exercise.objects.filter(user=user).aggregate(Avg("calories_burned"))["calories_burned__avg"] or 0
-
-            completed_exercises = Exercise.objects.filter(user=user).count()
+            avg_calories_burned = (
+                ExerciseStatus.objects
+                .filter(user=user, status="completed")
+                .aggregate(avg=Avg("calories_burned"))
+                .get("avg") or 0
+            )
+            completed_exercises = ExerciseStatus.objects.filter(user=user).count()
             goal_achievement_rate = (
                 round((completed_exercises / total_exercises) * 100, 2) if total_exercises else 0
             )
