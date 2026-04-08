@@ -207,6 +207,7 @@ class DoctorAssignExerciseView(APIView):
                 {
                     "exercise_id": ex.exercise.id,
                     "exercise_name": ex.exercise.title,
+                    "patient_id": ex.patient.id,
                     "patient_name": ex.patient.profile.first_name + " " + ex.patient.profile.last_name,
                     "assigned_by": ex.doctor.profile.first_name + " " + ex.doctor.profile.last_name,
                     "status": ex.status_entries.first().status if ex.status_entries.exists() else "pending",
