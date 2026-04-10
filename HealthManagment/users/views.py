@@ -680,9 +680,15 @@ class AcceptLegalView(APIView):
     
 class HealthEducationView(APIView):
     serializer_class = HealthEducationSerializer
+
     def get(self, request):
         data = HealthEducation.objects.filter(is_active=True).order_by("order")
-        return Response(HealthEducationSerializer(data, many=True).data)
+        serializer = HealthEducationSerializer(
+            data,
+            many=True,
+            context={"request": request} 
+        )
+        return Response(serializer.data)
     
 class HelpContentView(APIView):
     serializer_class = HelpContentSerializer
