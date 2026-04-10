@@ -415,9 +415,19 @@ class LegalConsentSerializer(serializers.ModelSerializer):
         return data
 
 class HealthEducationSerializer(serializers.ModelSerializer):
+    pdf_file = serializers.SerializerMethodField()
+
     class Meta:
         model = HealthEducation
         fields = "__all__"
+
+    def get_pdf_file(self, obj):
+        request = self.context.get("request")
+        if obj.pdf_file:
+            if request:
+                return request.build_absolute_uri(obj.pdf_file.url)
+            return obj.pdf_file.url
+        return None
 
 class HelpContentSerializer(serializers.ModelSerializer):
     class Meta:
