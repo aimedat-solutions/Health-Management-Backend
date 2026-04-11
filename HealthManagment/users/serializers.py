@@ -102,7 +102,7 @@ class UserLoginSerializer(serializers.Serializer):
                     raise serializers.ValidationError("OTP verification failed.")
             else:
                 # In non-production environments, verify with random OTP `1234`
-                if otp != '1234':
+                if otp != '123456':
                     raise serializers.ValidationError("Invalid OTP.")
         else:
             raise serializers.ValidationError("Must include either email and password or phone number and OTP.")
