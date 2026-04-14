@@ -544,7 +544,10 @@ class PatientDietQuestion(AuditModel):
 
         return timezone.now().date() >= last_entry.date + timedelta(
             days=int(getattr(settings, "DIET_QUESTION_ADD_DAYS", 3))
-        )####################################################### LabReport Model ################################################################################################
+        )
+        
+        
+    ####################################################### LabReport Model ################################################################################################
 class LabReport(AuditModel):
     """
     Stores medical reports uploaded by patients.

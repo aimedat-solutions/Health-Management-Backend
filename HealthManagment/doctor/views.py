@@ -269,12 +269,12 @@ class DoctorDietLogsView(APIView):
                 }
 
             # Add log
-            data[patient.id]["diet_logs"].append(self.format_log(log))
+            data[patient.id]["diet_logs"].append(self.format_log(log,request))
 
         return Response(list(data.values()))
 
     # ================= FORMAT =================
-    def format_log(self, log):
+    def format_log(self, log, request):
         meals = [log.breakfast, log.lunch, log.eveningSnack, log.dinner]
         filled = len([m for m in meals if m])
 
@@ -284,6 +284,12 @@ class DoctorDietLogsView(APIView):
             status = "partial"
         else:
             status = "pending"
+            
+        def get_audio_url(file):
+            if file:
+                return request.build_absolute_uri(file.url)
+            return None
+
 
         return {
             "id": log.id,
@@ -297,10 +303,10 @@ class DoctorDietLogsView(APIView):
             },
 
             "audio": {
-                "breakfast": log.breakfast_audio.url if log.breakfast_audio else None,
-                "lunch": log.lunch_audio.url if log.lunch_audio else None,
-                "evening_snack": log.eveningSnack_audio.url if log.eveningSnack_audio else None,
-                "dinner": log.dinner_audio.url if log.dinner_audio else None,
+                "breakfast": get_audio_url(log.breakfast_audio),
+                "lunch": get_audio_url(log.lunch_audio),
+                "evening_snack": get_audio_url(log.eveningSnack_audio),
+                "dinner": get_audio_url(log.dinner_audio),
             },
 
             "status": status
