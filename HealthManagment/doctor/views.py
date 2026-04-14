@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from users.models import CustomUser, DietPlan, MealPortion, Exercise, LabReport, PatientResponse, PatientDietQuestion, DietPlanDate,ExerciseDate
 from django.shortcuts import get_object_or_404
-from .serializers import PatientSerializer, DietPlanCreateSerializer, MealPortionSerializer,DietPlanReadSerializer,DietPlanMealSerializer,ExcerciseDateAssignSerializer,DoctorExerciseResponseSerializer
+from .serializers import PatientSerializer, DietPlanCreateSerializer, MealPortionSerializer,DietPlanReadSerializer,PatientDietQuestionSerializer,ExcerciseDateAssignSerializer,DoctorExerciseResponseSerializer
 from users.serializers import ExerciseDateSerializer
 from patient.serializers import LabReportSerializer, PatientResponseSerializer
 from users.permissions import PermissionsManager,IsDoctorUser, IsSuperAdmin, IsAdmin
@@ -238,76 +238,12 @@ class DoctorExerciseReviewView(generics.CreateAPIView):
     serializer_class = DoctorExerciseResponseSerializer
     permission_classes = [IsAuthenticated]
     
-    
+
+
 class DoctorDietLogsView(APIView):
     permission_classes = [PermissionsManager, IsDoctorUser]
 
     def get(self, request):
-
-        # 🔥 ONLY MODEL USED
-        queryset = PatientDietQuestion.objects.select_related(
-            "patient", "patient__profile"
-        ).order_by("-date")
-
-        data = {}
-
-        for log in queryset:
-            patient = log.patient
-
-            # Safe name
-            profile = getattr(patient, "profile", None)
-            first = getattr(profile, "first_name", "") or ""
-            last = getattr(profile, "last_name", "") or ""
-            name = (first + " " + last).strip() or "Patient"
-
-            # Create patient group
-            if patient.id not in data:
-                data[patient.id] = {
-                    "patient_id": patient.id,
-                    "patient_name": name,
-                    "diet_logs": []
-                }
-
-            # Add log
-            data[patient.id]["diet_logs"].append(self.format_log(log,request))
-
-        return Response(list(data.values()))
-
-    # ================= FORMAT =================
-    def format_log(self, log, request):
-        meals = [log.breakfast, log.lunch, log.eveningSnack, log.dinner]
-        filled = len([m for m in meals if m])
-
-        if filled == 4:
-            status = "completed"
-        elif filled > 0:
-            status = "partial"
-        else:
-            status = "pending"
-            
-        def get_audio_url(file):
-            if file:
-                return request.build_absolute_uri(file.url)
-            return None
-
-
-        return {
-            "id": log.id,
-            "date": log.date,
-
-            "meals": {
-                "breakfast": log.breakfast,
-                "lunch": log.lunch,
-                "evening_snack": log.eveningSnack,
-                "dinner": log.dinner,
-            },
-
-            "audio": {
-                "breakfast": get_audio_url(log.breakfast_audio),
-                "lunch": get_audio_url(log.lunch_audio),
-                "evening_snack": get_audio_url(log.eveningSnack_audio),
-                "dinner": get_audio_url(log.dinner_audio),
-            },
-
-            "status": status
-        }
+        queryset = PatientDietQuestion.objects.all().order_by("-date")
+        serializer = PatientDietQuestionSerializer(queryset, many=True, context={"request": request})
+        return Response(serializer.data)
