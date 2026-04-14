@@ -201,20 +201,37 @@ class DoctorAssignExerciseView(APIView):
             Allows doctors to view assigned exercises.
             """
             doctor = request.user
-            exercises = ExerciseDate.objects.filter(doctor=doctor)
+            exercises = ExerciseDate.objects.filter(doctor=doctor).select_related(
+                "exercise", "patient__profile", "doctor__profile"
+            )
 
             data = [
                 {
-                    "exercise_id": ex.exercise.id,
-                    "exercise_name": ex.exercise.title,
-                    "patient_id": ex.patient.id,
-                    "patient_name": ex.patient.profile.first_name + " " + ex.patient.profile.last_name,
-                    "assigned_by": ex.doctor.profile.first_name + " " + ex.doctor.profile.last_name,
-                    "status": ex.status_entries.first().status if ex.status_entries.exists() else "pending",
+                    "exercise_id": ex.exercise.id if ex.exercise else None,
+                    "exercise_name": ex.exercise.title if ex.exercise else "Exercise",
+
+                    "patient_id": ex.patient.id if ex.patient else None,
+                    "patient_name": (
+                        f"{getattr(ex.patient.profile, 'first_name', '') or ''} "
+                        f"{getattr(ex.patient.profile, 'last_name', '') or ''}"
+                    ).strip() or "Patient",
+
+                    "assigned_by": (
+                        f"{getattr(ex.doctor.profile, 'first_name', '') or ''} "
+                        f"{getattr(ex.doctor.profile, 'last_name', '') or ''}"
+                    ).strip() or "Doctor",
+
+                    "status": (
+                        ex.status_entries.first().status
+                        if ex.status_entries.exists()
+                        else "pending"
+                    ),
+
                     "date": ex.date
                 }
                 for ex in exercises
             ]
+
             return Response(data, status=200)
         
 class DoctorExerciseReviewView(generics.CreateAPIView):
