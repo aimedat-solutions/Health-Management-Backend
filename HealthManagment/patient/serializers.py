@@ -192,7 +192,6 @@ class BulkPatientResponseSerializer(serializers.Serializer):
         return data      
 class DietQuestionSerializer(serializers.ModelSerializer):
     ask_diet_question = serializers.SerializerMethodField()
-    last_diet_update = serializers.SerializerMethodField()
     date = serializers.SerializerMethodField()
     
     class Meta:
@@ -202,11 +201,6 @@ class DietQuestionSerializer(serializers.ModelSerializer):
     def get_ask_diet_question(self, obj):
         return obj.patient.ask_diet_question
     
-    def get_last_diet_update(self, obj):
-        if obj.last_diet_update:
-            return obj.last_diet_update.date().isoformat() if hasattr(obj.last_diet_update, 'date') else obj.last_diet_update
-        return None
-
     def get_date(self, obj):
         if obj.date:
             return obj.date.date().isoformat() if hasattr(obj.date, 'date') else obj.date

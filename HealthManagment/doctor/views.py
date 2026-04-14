@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
-from users.models import CustomUser, DietPlan, MealPortion, Exercise, LabReport, PatientResponse, HealthStatus, DietPlanDate,ExerciseDate
+from users.models import CustomUser, DietPlan, MealPortion, Exercise, LabReport, PatientResponse, PatientDietQuestion, DietPlanDate,ExerciseDate
 from django.shortcuts import get_object_or_404
 from .serializers import PatientSerializer, DietPlanCreateSerializer, MealPortionSerializer,DietPlanReadSerializer,DietPlanMealSerializer,ExcerciseDateAssignSerializer,DoctorExerciseResponseSerializer
 from users.serializers import ExerciseDateSerializer
@@ -237,3 +237,71 @@ class DoctorAssignExerciseView(APIView):
 class DoctorExerciseReviewView(generics.CreateAPIView):
     serializer_class = DoctorExerciseResponseSerializer
     permission_classes = [IsAuthenticated]
+    
+    
+class DoctorDietLogsView(APIView):
+    permission_classes = [PermissionsManager, IsDoctorUser]
+
+    def get(self, request):
+
+        # 🔥 ONLY MODEL USED
+        queryset = PatientDietQuestion.objects.select_related(
+            "patient", "patient__profile"
+        ).order_by("-date")
+
+        data = {}
+
+        for log in queryset:
+            patient = log.patient
+
+            # Safe name
+            profile = getattr(patient, "profile", None)
+            first = getattr(profile, "first_name", "") or ""
+            last = getattr(profile, "last_name", "") or ""
+            name = (first + " " + last).strip() or "Patient"
+
+            # Create patient group
+            if patient.id not in data:
+                data[patient.id] = {
+                    "patient_id": patient.id,
+                    "patient_name": name,
+                    "diet_logs": []
+                }
+
+            # Add log
+            data[patient.id]["diet_logs"].append(self.format_log(log))
+
+        return Response(list(data.values()))
+
+    # ================= FORMAT =================
+    def format_log(self, log):
+        meals = [log.breakfast, log.lunch, log.eveningSnack, log.dinner]
+        filled = len([m for m in meals if m])
+
+        if filled == 4:
+            status = "completed"
+        elif filled > 0:
+            status = "partial"
+        else:
+            status = "pending"
+
+        return {
+            "id": log.id,
+            "date": log.date,
+
+            "meals": {
+                "breakfast": log.breakfast,
+                "lunch": log.lunch,
+                "evening_snack": log.eveningSnack,
+                "dinner": log.dinner,
+            },
+
+            "audio": {
+                "breakfast": log.breakfast_audio.url if log.breakfast_audio else None,
+                "lunch": log.lunch_audio.url if log.lunch_audio else None,
+                "evening_snack": log.eveningSnack_audio.url if log.eveningSnack_audio else None,
+                "dinner": log.dinner_audio.url if log.dinner_audio else None,
+            },
+
+            "status": status
+        }
