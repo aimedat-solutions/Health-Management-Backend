@@ -521,21 +521,30 @@ class PatientDietQuestion(AuditModel):
     eveningSnack_audio = models.FileField(upload_to="diet_questions/audio/", null=True, blank=True)
     dinner_audio = models.FileField(upload_to="diet_questions/audio/", null=True, blank=True)
 
-    last_diet_update = models.DateField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     class Meta:
         unique_together = ("patient", "date")
+        ordering = ["-date"]
 
     def __str__(self):
-        return f"Diet question for {self.patient.username} on {self.last_diet_update}"
+        return f"Diet question for {self.patient.username} on {self.date}"
 
-    def is_due_for_update(self):
-        last_entry = PatientDietQuestion.objects.filter(patient=self.patient).order_by('-date').first()
+    @staticmethod
+    def is_due_for_update(patient):
+        """
+        Check if patient can submit diet again based on N days rule
+        """
+        last_entry = PatientDietQuestion.objects.filter(
+            patient=patient
+        ).order_by('-date').first()
+
         if not last_entry:
             return True
-        return timezone.now().date() >= last_entry.date + timedelta(days=int(settings.DIET_QUESTION_ADD_DAYS))
-    
 
-######################################################################## LabReport Model ################################################################################################
+        return timezone.now().date() >= last_entry.date + timedelta(
+            days=int(getattr(settings, "DIET_QUESTION_ADD_DAYS", 3))
+        )####################################################### LabReport Model ################################################################################################
 class LabReport(AuditModel):
     """
     Stores medical reports uploaded by patients.

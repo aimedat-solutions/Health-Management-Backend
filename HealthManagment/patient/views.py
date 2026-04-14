@@ -279,98 +279,99 @@ class DietQuestionsView(generics.ListCreateAPIView):
     serializer_class = DietQuestionSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_class = DietQuestionFilter
-    queryset = PatientDietQuestion.objects.all()
     codename = 'patientdietquestion'
-    
+
     def get_queryset(self):
-        return PatientDietQuestion.objects.filter(patient=self.request.user)
-    
+        return PatientDietQuestion.objects.filter(
+            patient=self.request.user
+        ).order_by("-date")
+
+    # ================= GET =================
     def get(self, request):
-        """
-        Retrieve the latest diet details for the patient.
-        """
         user = request.user
 
         if user.role != "patient":
-            return Response({"message": "Only patients can access diet questions."}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {"message": "Only patients can access diet questions."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         queryset = self.filter_queryset(self.get_queryset())
-        last_diet = queryset.order_by('-last_diet_update').first()
-        
+
+        last_diet = queryset.first()
+
+        is_due = PatientDietQuestion.is_due_for_update(user)
+
         if not last_diet:
-            return Response(
-                {
-                    "message": "No diet records found. Please submit your diet details.",
-                    "ask_diet_question": user.ask_diet_question
-                }, 
-                status=status.HTTP_200_OK
-            )
-            
-        if timezone.now().date() >= last_diet.last_diet_update + timedelta(days=int(settings.DIET_QUESTION_ADD_DAYS)):
-            user.ask_diet_question = True  
-            user.save()
+            return Response({
+                "message": "No diet records found.",
+                "diet_logs": [],
+                "ask_diet_question": True
+            }, status=200)
 
-        if not last_diet.is_due_for_update():
-            return Response(
-                {
-                    "message": "Diet update not yet due.",
-                    "diet_details": DietQuestionSerializer(last_diet).data,
-                    "ask_diet_question": user.ask_diet_question
-                }, 
-                status=status.HTTP_200_OK
-            )
+        return Response({
+            "message": "Diet questions fetched successfully",
+            "diet_logs": DietQuestionSerializer(
+                queryset,
+                many=True,
+                context={"request": request}
+            ).data,
+            "last_entry": DietQuestionSerializer(
+                last_diet,
+                context={"request": request}
+            ).data,
+            "ask_diet_question": is_due
+        }, status=200)
 
-        return Response(
-            {
-                "message": "Diet details retrieved successfully.",
-                "diet_details": DietQuestionSerializer(last_diet).data,
-                "ask_diet_question": user.ask_diet_question
-            },
-            status=status.HTTP_200_OK
-        )
-        
+    # ================= POST =================
     def post(self, request):
-        """
-        POST the patient's diet details.
-        Expected Request:
-        {
-            "breakfast": "Oatmeal with fruits",
-            "lunch": "Grilled chicken with salad",      
-            "dinner": "Steamed fish with vegetables",
-            "eveningSnack": "Mixed nuts"
-        }
-        """
         user = request.user
 
-        # Check if the user is a patient and has completed the initial questions
         if user.role != "patient":
-            return Response({"message": "Only patients can add diet details."}, status=status.HTTP_403_FORBIDDEN)
-        
+            return Response(
+                {"message": "Only patients can add diet details."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         if not user.initial_question_completed:
-            return Response({"message": "Complete the initial questions first."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"message": "Complete the initial questions first."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        patient_diet, created = PatientDietQuestion.objects.get_or_create(patient=user)
+        # 🔥 3-DAY RULE CHECK
+        if not PatientDietQuestion.is_due_for_update(user):
+            return Response({
+                "message": "You can update diet only after allowed days"
+            }, status=400)
 
-        # allowed_days = int(getattr(settings, "DIET_QUESTION_ADD_DAYS", 3))  
-        # if not created and patient_diet.last_diet_update >= timezone.now().date() - timedelta(days=allowed_days):
-        #     return Response({"message": "Diet details already submitted recently."}, status=status.HTTP_400_BAD_REQUEST)
+        today = timezone.now().date()
 
-        diet_fields = ["date", "breakfast", "lunch", "eveningSnack", "dinner", "breakfast_audio", "lunch_audio", "eveningSnack_audio", "dinner_audio"]
-        for field in diet_fields:
-            setattr(patient_diet, field, request.data.get(field, getattr(patient_diet, field)))
+        # 🔥 CREATE NEW ENTRY (NOT UPDATE OLD)
+        diet = PatientDietQuestion.objects.create(
+            patient=user,
+            date=today,
+            breakfast=request.data.get("breakfast"),
+            lunch=request.data.get("lunch"),
+            eveningSnack=request.data.get("eveningSnack"),
+            dinner=request.data.get("dinner"),
+            breakfast_audio=request.FILES.get("breakfast_audio"),
+            lunch_audio=request.FILES.get("lunch_audio"),
+            eveningSnack_audio=request.FILES.get("eveningSnack_audio"),
+            dinner_audio=request.FILES.get("dinner_audio"),
+        )
 
-        patient_diet.save()
         user.is_first_login = False
         user.save()
 
-        return Response(
-            {
-                "message": "Diet details saved successfully.",
-                "diet_details": DietQuestionSerializer(patient_diet).data,
-                "ask_diet_question": user.ask_diet_question
-            },
-            status=status.HTTP_201_CREATED
-        )
-
+        return Response({
+            "message": "Diet details saved successfully",
+            "diet_details": DietQuestionSerializer(
+                diet,
+                context={"request": request}
+            ).data,
+            "ask_diet_question": False
+        }, status=status.HTTP_201_CREATED)
 class DietQuestionStatusView(APIView):
     """
     GET: Returns whether the patient should be asked diet questions (every 3 days).
