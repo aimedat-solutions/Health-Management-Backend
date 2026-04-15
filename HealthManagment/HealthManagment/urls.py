@@ -37,6 +37,8 @@ urlpatterns = [
     path('profile/', ProfileAPIView.as_view(), name='profile-api'),
     path('doctor/', include('doctor.urls')),
     path('patient/', include('patient.urls')), 
+    
+    path("notifications/", include("notification.urls")),
 ]
 
 if settings.DEBUG:

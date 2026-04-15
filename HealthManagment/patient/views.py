@@ -277,6 +277,7 @@ class InitialQuestionsView(generics.ListAPIView):
 class DietQuestionsView(generics.ListCreateAPIView):
     permission_classes = [PermissionsManager]
     serializer_class = DietQuestionSerializer
+    parser_classes = [MultiPartParser, FormParser] 
     filter_backends = [DjangoFilterBackend]
     filterset_class = DietQuestionFilter
     codename = 'patientdietquestion'
