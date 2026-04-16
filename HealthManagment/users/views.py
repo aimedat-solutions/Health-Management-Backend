@@ -400,15 +400,11 @@ class QuestionAnswerListCreateView(APIView):
 
 
 class DashboardView(APIView):
-    permission_classes = [PermissionsManager]  # Ensure only authenticated users can access
+    permission_classes = [PermissionsManager]
 
     def get(self, request):
-        """
-        API Endpoint to fetch dashboard details for Doctor, Patient, and Admin.
-        Returns relevant analytics based on user role.
-        """
         user = request.user
-        role = getattr(user, "role", None)  # Ensure role exists
+        role = getattr(user, "role", None)
 
         if not role:
             return Response({"error": "User role not found"}, status=400)
@@ -417,7 +413,9 @@ class DashboardView(APIView):
 
         if role == "doctor":
 
-            # ===== MY PATIENTS ONLY =====
+            today = timezone.now().date()
+
+            # ===== PATIENTS =====
             patients = CustomUser.objects.filter(
                 role="patient",
                 assigned_diets__doctor=user
@@ -425,22 +423,20 @@ class DashboardView(APIView):
 
             total_mothers = patients.count()
 
-            # ===== HIGH RISK (from HealthStatus) =====
+            # ===== HIGH RISK =====
             high_risk = HealthStatus.objects.filter(
                 patient__in=patients,
                 health_status__in=["Poor", "Critical"]
-            ).count()
+            ).values("patient").distinct().count()
 
             # ===== DUE IN 30 DAYS =====
-            today = date.today()
             due_soon = Profile.objects.filter(
                 user__in=patients,
-                lmp_date__isnull=False
-            ).filter(
-                lmp_date__lte=today - timedelta(days=240),  # approx 8 months
+                lmp_date__isnull=False,
+                lmp_date__lte=date.today() - timedelta(days=240)
             ).count()
 
-            # ===== TRIMESTER DISTRIBUTION =====
+            # ===== TRIMESTER =====
             trimester = {"t1": 0, "t2": 0, "t3": 0}
 
             for p in Profile.objects.filter(user__in=patients):
@@ -453,40 +449,60 @@ class DashboardView(APIView):
                     else:
                         trimester["t3"] += 1
 
-            # ===== TODAY MISSED DIET =====
-            today = timezone.now().date()
-
-            diet_missed = DietPlanStatus.objects.filter(
+            diet_qs = DietPlanStatus.objects.filter(
                 patient__in=patients,
                 date=today,
                 status="skipped"
-            ).count()
+            )
 
-            # ===== EXERCISE MISSED =====
-            exercise_missed = ExerciseStatus.objects.filter(
+            diet_missed_patients = diet_qs.values("patient").distinct().count()
+            diet_missed_total = diet_qs.count()
+
+            exercise_qs = ExerciseStatus.objects.filter(
                 user__in=patients,
                 status="skipped",
                 updated_at__date=today
-            ).count()
+            )
 
-            # ===== RECENT MOTHERS LIST =====
-            recent_mothers = []
+            exercise_missed_patients = exercise_qs.values("user").distinct().count()
+            exercise_missed_total = exercise_qs.count()
 
-            for p in patients[:10]:
+            alerts = []
 
-                profile = getattr(p, "profile", None)
-                health = HealthStatus.objects.filter(patient=p).last()
+            critical_cases = HealthStatus.objects.filter(
+                patient__in=patients,
+                health_status="Critical"
+            ).select_related("patient")
 
-                recent_mothers.append({
-                    "name": p.get_full_name() or p.profile.first_name,
-                    "gestational_age": profile.gestational_age if profile else "NA",
-                    "bp": health.blood_pressure if health else "NA",
-                    "sugar": health.blood_sugar if health else "NA",
-                    "bmi": health.bmi if health else "NA",
-                    "risk": health.health_status if health else "Normal"
+            for c in critical_cases[:10]:
+                alerts.append({
+                    "name": c.patient.get_full_name(),
+                    "message": "Critical health condition",
+                    "type": "critical"
                 })
 
-            # ===== RESPONSE =====
+            profiles = Profile.objects.filter(user__in=patients).select_related("user")
+            health_map = {
+                h.patient_id: h
+                for h in HealthStatus.objects.filter(patient__in=patients)
+            }
+
+            recent_mothers = []
+
+            for p in profiles[:10]:
+                user_obj = p.user
+                health = health_map.get(user_obj.id)
+
+                recent_mothers.append({
+                    "id": user_obj.id,
+                    "name": user_obj.get_full_name() or user_obj.first_name,
+                    "gestational_age": p.gestational_age or "NA",
+                    "bp": getattr(health, "blood_pressure", "NA"),
+                    "sugar": getattr(health, "blood_sugar", "NA"),
+                    "edd": p.edd or "NA",
+                    "bmi": p.bmi or "NA",
+                    "health_status": getattr(health, "health_status", "Stable")
+                })
 
             response_data.update({
                 "active_mothers": total_mothers,
@@ -495,64 +511,63 @@ class DashboardView(APIView):
 
                 "trimester_overview": trimester,
 
-                "diet_missed_today": diet_missed,
-                "exercise_missed_today": exercise_missed,
+                # ✅ CORRECT COUNTS
+                "diet_missed_today": diet_missed_patients,
+                "diet_missed_total": diet_missed_total,
 
+                "exercise_missed_today": exercise_missed_patients,
+                "exercise_missed_total": exercise_missed_total,
+
+                # ✅ NEW ALERTS
+                "alerts": alerts,
+
+                # ✅ DATA
                 "recent_mothers": recent_mothers,
             })
+
         elif role == "patient":
+
             total_diets = DietPlan.objects.filter(patient=user).count()
             total_exercises = ExerciseDate.objects.filter(patient=user).count()
-            latest_health_status = HealthStatus.objects.filter(patient=user).order_by("-created_at").first()
+
+            latest_health_status = HealthStatus.objects.filter(
+                patient=user
+            ).order_by("-created_at").first()
+
             avg_calories_burned = (
                 ExerciseStatus.objects
                 .filter(user=user, status="completed")
                 .aggregate(avg=Avg("calories_burned"))
                 .get("avg") or 0
             )
+
             completed_exercises = ExerciseStatus.objects.filter(user=user).count()
+
             goal_achievement_rate = (
-                round((completed_exercises / total_exercises) * 100, 2) if total_exercises else 0
+                round((completed_exercises / total_exercises) * 100, 2)
+                if total_exercises else 0
             )
 
             response_data.update({
                 "total_diets": total_diets,
                 "total_exercises": total_exercises,
-                "latest_health_status": latest_health_status.health_status if latest_health_status else "No status available",
+                "latest_health_status": latest_health_status.health_status if latest_health_status else "No status",
                 "average_calories_burned_per_week": avg_calories_burned,
                 "goal_achievement_rate": goal_achievement_rate,
             })
 
         elif role == "admin":
+
             total_patients = CustomUser.objects.filter(role="patient").count()
             total_doctors = CustomUser.objects.filter(role="doctor").count()
             total_diet_plans = DietPlan.objects.count()
             total_exercises = Exercise.objects.count()
-            monthly_growth = CustomUser.objects.filter(date_joined__month=2).count()
-
-            top_doctors = (
-                CustomUser.objects.filter(role="doctor")
-                .annotate(
-                    diet_count=Count("created_diets"),
-                    exercise_count=Count("created_exercise_set")
-                )
-                .order_by("-diet_count", "-exercise_count")[:5]
-            )
-
-            most_popular_diet = (
-                DietPlan.objects.annotate(patient_count=Count("patient"))
-                .order_by("-patient_count")
-                .first()
-            )
 
             response_data.update({
                 "total_patients": total_patients,
                 "total_doctors": total_doctors,
                 "total_diet_plans": total_diet_plans,
                 "total_exercises": total_exercises,
-                "monthly_growth": monthly_growth,
-                "top_doctors": [doctor.username for doctor in top_doctors],
-                "most_popular_diet": most_popular_diet.title if most_popular_diet else None,
             })
 
         else:
