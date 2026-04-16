@@ -117,11 +117,40 @@ class PhoneNumberSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = ('phone_number',)
 class CustomUserDetailsSerializer(serializers.ModelSerializer):
+    first_name = serializers.SerializerMethodField()
+    last_name = serializers.SerializerMethodField()
+    specialization = serializers.SerializerMethodField()
     class Meta:
         model = CustomUser
-        fields = ('pk', 'username', 'email', 'role', 'first_name', 'last_name', 'phone_number', "created_at", "created_by", "updated_at", "updated_by")
-        read_only_fields = ('email',)
+        fields = (
+            'pk',
+            'username',
+            'email',
+            'role',
+            'first_name',
+            'last_name',
+            'specialization',
+            'phone_number',
+            "created_at",
+            "created_by",
+            "updated_at",
+            "updated_by",
+        )
 
+    def get_first_name(self, obj):
+        return getattr(obj.profile, "first_name", None)
+
+    def get_last_name(self, obj):
+        return getattr(obj.profile, "last_name", None)
+    
+    def get_specialization(self, obj):
+        # ✅ only for doctors
+        if obj.role != "doctor":
+            return None
+
+        profile = getattr(obj, "profile", None)
+        return getattr(profile, "specialization", None) if profile else None
+    
 class CustomUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser

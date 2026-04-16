@@ -293,7 +293,7 @@ class DietQuestionsView(generics.ListCreateAPIView):
 
         if user.role != "patient":
             return Response(
-                {"message": "Only patients can access diet questions."},
+                {"message": "This feature is only available for patients."},
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -305,13 +305,13 @@ class DietQuestionsView(generics.ListCreateAPIView):
 
         if not last_diet:
             return Response({
-                "message": "No diet records found.",
+                "message": "You haven’t added your diet details yet.",
                 "diet_logs": [],
                 "ask_diet_question": True
             }, status=200)
 
         return Response({
-            "message": "Diet questions fetched successfully",
+            "message": "Here are your diet details.",
             "diet_logs": DietQuestionSerializer(
                 queryset,
                 many=True,
@@ -330,25 +330,23 @@ class DietQuestionsView(generics.ListCreateAPIView):
 
         if user.role != "patient":
             return Response(
-                {"message": "Only patients can add diet details."},
+                {"message": "This feature is only available for patients."},
                 status=status.HTTP_403_FORBIDDEN
             )
 
         if not user.initial_question_completed:
             return Response(
-                {"message": "Complete the initial questions first."},
+                {"message": "Please complete your initial questions before adding diet details."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # 🔥 3-DAY RULE CHECK
         if not PatientDietQuestion.is_due_for_update(user):
             return Response({
-                "message": "You can update diet only after allowed days"
+                "message": "You’ve already updated your diet recently. Please try again after a few days."
             }, status=400)
 
         today = timezone.now().date()
 
-        # 🔥 CREATE NEW ENTRY (NOT UPDATE OLD)
         diet = PatientDietQuestion.objects.create(
             patient=user,
             date=today,
@@ -366,7 +364,7 @@ class DietQuestionsView(generics.ListCreateAPIView):
         user.save()
 
         return Response({
-            "message": "Diet details saved successfully",
+            "message": "Great! Your diet details have been saved.",
             "diet_details": DietQuestionSerializer(
                 diet,
                 context={"request": request}

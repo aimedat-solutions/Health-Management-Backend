@@ -1,16 +1,22 @@
-import os
+import os,json
 import firebase_admin
 from firebase_admin import credentials, messaging
 from django.conf import settings
 from .models import Notification, DeviceToken
-
+from decouple import config
 
 # ✅ Initialize Firebase (safe)
 def initialize_firebase():
     if not firebase_admin._apps:
-        cred = credentials.Certificate("notification/serviceAccountKey.json")
-        firebase_admin.initialize_app(cred)
+        firebase_json = config("FIREBASE_CREDENTIALS")
 
+        if not firebase_json:
+            raise Exception("Firebase credentials not found in ENV")
+
+        cred_dict = json.loads(firebase_json)
+
+        cred = credentials.Certificate(cred_dict)
+        firebase_admin.initialize_app(cred)
 
 # ✅ Push Notification Sender
 def send_push_notification(tokens, title, body, data=None):
