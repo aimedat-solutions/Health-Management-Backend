@@ -271,11 +271,12 @@ class DietPlanSerializer(serializers.ModelSerializer):
         return "pending"
 
 class ExerciseSerializer(serializers.ModelSerializer):
+       diabetes_safe = serializers.BooleanField(read_only=True)
        class Meta:
         model = Exercise
         fields = [
             'id', 'title', 'image_content', 'description', 'video_content',
-            "created_at", "created_by", "updated_at", "updated_by"
+            "created_at", "created_by", "diabetes_safe", "updated_at", "updated_by"
         ]
         read_only_fields = ['created_at', 'updated_at']
 

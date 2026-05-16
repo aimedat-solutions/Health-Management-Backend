@@ -85,65 +85,79 @@ class MealPortionViewSet(viewsets.ModelViewSet):
 
 class DietPlanViewSet(viewsets.ModelViewSet):
     """
-    Allows doctors to create and retrieve diet plans for patients.
-    
-    example :
-    
-            {
-            "patient": 1,
-            "diet": {
-                "breakfast": {
-                "meal_portions": [1, 2],
-                "start_time": "18:00:00",
-                "end_time": "18:30:00"
-                },
-                "lunch": {
-                "meal_portions": [3],
-                "start_time": "18:00:00",
-                "end_time": "18:30:00"
-                }
-            },
-            "dates": ["2025-09-03", "2025-09-04"]
-            }
-    
+    Allows doctors and admins to create and retrieve diet plans for patients.
     """
     queryset = DietPlan.objects.none()
     permission_classes = [PermissionsManager]
     serializer_class = DietPlanCreateSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = ["patient__username", "diet_dates"]
-    codename = 'dietplan'
+    codename = "dietplan"
 
     def get_queryset(self):
-        qs = DietPlan.objects.filter(doctor=self.request.user).prefetch_related(
+
+        user = self.request.user
+
+        qs = DietPlan.objects.prefetch_related(
             "meals__meal_portions",
             "diet_dates",
             "patient"
         )
+
+        # ==========================
+        # ADMIN ACCESS
+        # ==========================
+        if user.role in ["admin", "superadmin"]:
+            pass
+
+        # ==========================
+        # DOCTOR ACCESS
+        # ==========================
+        else:
+            qs = qs.filter(doctor=user)
+
+        # ==========================
+        # FILTER BY PATIENT
+        # ==========================
         patient_id = self.request.query_params.get("patient_id")
+
         if patient_id:
             qs = qs.filter(patient__id=patient_id)
-        return qs
+
+        return qs.order_by("-id")
 
     def get_serializer_class(self):
-        if self.action in ['list', 'retrieve']:
+
+        if self.action in ["list", "retrieve"]:
             return DietPlanReadSerializer
+
         return DietPlanCreateSerializer
 
     def perform_create(self, serializer):
-        serializer.save(doctor=self.request.user)
-    
+
+        serializer.save(
+            doctor=self.request.user
+        )
+
     def get_serializer_context(self):
+
         context = super().get_serializer_context()
-        target_date = self.request.query_params.get('date')
+
+        target_date = self.request.query_params.get("date")
+
         if target_date:
             from datetime import datetime
+
             try:
-                context["target_date"] = datetime.strptime(target_date, "%Y-%m-%d").date()
+                context["target_date"] = datetime.strptime(
+                    target_date,
+                    "%Y-%m-%d"
+                ).date()
+
             except ValueError:
                 pass
-        return context
 
+        return context
 class ReviewHealthStatusView(APIView):
     """
     Allows doctors to review the health status of patients.
