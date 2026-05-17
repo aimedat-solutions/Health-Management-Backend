@@ -379,7 +379,7 @@ class QuestionAnswerListCreateView(APIView):
             answers = PatientResponse.objects.filter(user=user)
         elif user.role == "doctor":
             # Assuming reverse FK from User (patients) to doctor is `assigned_doctor`
-            answers = PatientResponse.objects.filter(user=user)
+            answers = PatientResponse.objects.filter()
         else:
             return Response({"detail": "Unauthorized user."}, status=status.HTTP_403_FORBIDDEN)
         serializer = QuestionAnswerSerializer(answers, many=True)

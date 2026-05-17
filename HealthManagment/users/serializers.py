@@ -394,11 +394,11 @@ class QuestionCreateSerializer(serializers.ModelSerializer):
         return instance
         
 class QuestionAnswerSerializer(serializers.ModelSerializer):
-    question_text = serializers.CharField(source="question.question_text", read_only=True)
-    user_info = serializers.CharField(source="user.username", read_only=True)
+    questions = QuestionSerializer(source="question", read_only=True)
+    user_info = ProfileSerializer(source="user.profile", read_only=True)
     class Meta:
         model = PatientResponse
-        fields = ["id", "user", "question", "question_text", "response_text", "user_info", "created_at", "created_by", "updated_at", "updated_by"]
+        fields = ["id", "user", "questions",  "response_text", "user_info", "created_at", "created_by", "updated_at", "updated_by"]
         
         
         
