@@ -300,13 +300,19 @@ class OptionSerializer(serializers.ModelSerializer):
 class QuestionSerializer(serializers.ModelSerializer):
     options = OptionSerializer(many=True, read_only=True)
     sub_questions = serializers.SerializerMethodField()
+    question_image = serializers.SerializerMethodField()
     class Meta:
         model = Question
         fields = ['id', 'question_image', 'question_text', 'category', 'type', 'parent', 'condition_value', 'placeholder', 'max_length', 'options', 'sub_questions']
         
+    def get_question_image(self, obj):
+        request = self.context.get('request')
+        if obj.question_image and request:
+            return request.build_absolute_uri(obj.question_image.url)
+        return None
+        
     def get_sub_questions(self, obj):
-        # Recursively include subquestions
-        return QuestionSerializer(obj.sub_questions.all(), many=True).data
+        return QuestionSerializer(obj.sub_questions.all(), many=True, context=self.context).data
         
     def to_representation(self, instance):
         representation = super().to_representation(instance)
@@ -394,11 +400,14 @@ class QuestionCreateSerializer(serializers.ModelSerializer):
         return instance
         
 class QuestionAnswerSerializer(serializers.ModelSerializer):
-    questions = QuestionSerializer(source="question", read_only=True)
+    questions = serializers.SerializerMethodField()
     user_info = ProfileSerializer(source="user.profile", read_only=True)
     class Meta:
         model = PatientResponse
         fields = ["id", "user", "questions",  "response_text", "user_info", "created_at", "created_by", "updated_at", "updated_by"]
+        
+    def get_questions(self, obj):
+        return QuestionSerializer(obj.question, context=self.context).data
         
         
         
