@@ -7,7 +7,7 @@ from django.shortcuts import get_object_or_404
 from .serializers import PatientSerializer, DietPlanCreateSerializer, MealPortionSerializer,DietPlanReadSerializer,PatientDietQuestionSerializer,ExcerciseDateAssignSerializer,DoctorExerciseResponseSerializer
 from users.serializers import ExerciseDateSerializer
 from patient.serializers import LabReportSerializer, PatientResponseSerializer
-from users.permissions import PermissionsManager,IsDoctorUser, IsSuperAdmin, IsAdmin
+from users.permissions import PermissionsManager,IsDoctorUser, IsSuperAdmin, IsAdmin, IsDoctorOrAdmin
 from rest_framework import viewsets, filters, generics
 from django_filters.rest_framework import DjangoFilterBackend
 from users.filters import CustomUserFilter
@@ -78,10 +78,9 @@ class PatientManagementViewSet(viewsets.ModelViewSet):
 class MealPortionViewSet(viewsets.ModelViewSet):
     queryset = MealPortion.objects.all()
     serializer_class = MealPortionSerializer
-    permission_classes = [PermissionsManager]
+    permission_classes = [IsDoctorOrAdmin]
     filter_backends = [filters.SearchFilter]
     search_fields = ["name"]
-    codename = 'mealportion'
 
 class DietPlanViewSet(viewsets.ModelViewSet):
     """

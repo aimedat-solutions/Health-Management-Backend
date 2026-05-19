@@ -62,6 +62,16 @@ class IsDoctorUser(permissions.BasePermission):
     def has_permission(self, request, view):
         return request.user and request.user.is_authenticated and request.user.groups.filter(name='doctor').exists() 
     
+class IsDoctorOrAdmin(permissions.BasePermission):
+    """Allows access to doctors, admins, and superadmins."""
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        return (
+            request.user.role in ["admin", "superadmin"] or
+            request.user.groups.filter(name='doctor').exists()
+        ) 
+    
 class IsPatientUser(permissions.BasePermission):
     """
     Custom permission to allow only users in the 'doctor' group.

@@ -21,6 +21,7 @@ app_name = 'doctor'
 router = DefaultRouter()
 router.register(r"assign-dietplans", DietPlanViewSet, basename='dietplan')
 router.register(r"patients", PatientManagementViewSet, basename='patient')
+router.register(r"mealportions", MealPortionViewSet, basename='mealportion')
 
 labreport_list = LabReportViewSet.as_view({"get": "list"})
 
