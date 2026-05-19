@@ -406,6 +406,7 @@ class QuestionAnswerListCreateView(APIView):
 
 class DashboardView(APIView):
     permission_classes = [PermissionsManager]
+    codename = 'dashboard'
 
     def get(self, request):
         user = request.user
@@ -561,18 +562,37 @@ class DashboardView(APIView):
                 "goal_achievement_rate": goal_achievement_rate,
             })
 
-        elif role == "admin":
+        elif role in ["admin", "superadmin"]:
 
             total_patients = CustomUser.objects.filter(role="patient").count()
             total_doctors = CustomUser.objects.filter(role="doctor").count()
             total_diet_plans = DietPlan.objects.count()
             total_exercises = Exercise.objects.count()
+            total_admins = CustomUser.objects.filter(role="admin").count()
+
+            today = timezone.now().date()
+            diet_missed_today = DietPlanStatus.objects.filter(
+                date=today,
+                status="skipped"
+            ).count()
+            exercise_missed_today = ExerciseStatus.objects.filter(
+                status="skipped",
+                updated_at__date=today
+            ).count()
+
+            critical_cases = HealthStatus.objects.filter(
+                health_status="Critical"
+            ).select_related("patient").count()
 
             response_data.update({
                 "total_patients": total_patients,
                 "total_doctors": total_doctors,
                 "total_diet_plans": total_diet_plans,
                 "total_exercises": total_exercises,
+                "total_admins": total_admins,
+                "diet_missed_today": diet_missed_today,
+                "exercise_missed_today": exercise_missed_today,
+                "critical_cases": critical_cases,
             })
 
         else:

@@ -4,7 +4,7 @@ from .views import ( ExerciseListCreateView,ExerciseDetailView,HealthEducationVi
  SendOrResendSMSAPIView,AdminCreateView,DoctorListCreateView,DoctorDetailView,
  UserListCreateView, UserDetailView,QuestionListCreateView, QuestionDetailView, ProfileAPIView,
  CustomLoginView,SyncStepsView, TodayStepsView, WeeklyStepsView,AppContentView,HelpContentView,
- AcceptLegalView,AdminDietPlanListView,AdminDoctorDietPlansView,AdminDoctorPatientsView
+ AcceptLegalView,AdminDietPlanListView,AdminDoctorDietPlansView,AdminDoctorPatientsView,DashboardView
 )
 from doctor.views import MealPortionViewSet
 app_name = 'users'
@@ -40,4 +40,5 @@ urlpatterns = [
     path('dietplans/', AdminDietPlanListView.as_view(), name='admin-dietplan-list'),
     path('doctors/<int:doctor_id>/dietplans/', AdminDoctorDietPlansView.as_view(), name='admin-doctor-dietplans'),
     path('doctors/<int:doctor_id>/patients/', AdminDoctorPatientsView.as_view(), name='admin-doctor-patients'),
+    path('dashboard/', DashboardView.as_view(), name='admin-dashboard'),
 ]
