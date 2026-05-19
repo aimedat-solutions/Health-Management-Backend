@@ -7,7 +7,7 @@ from .serializers import ( ExerciseSerializer, ProfileSerializer, HealthEducatio
                         PhoneNumberSerializer,HelpContentSerializer,LegalConsentSerializer
                         )
 from doctor.serializers import DietPlanReadSerializer, DietPlanCreateSerializer
-from django.db.models import Count,Avg
+from django.db.models import Count,Avg,F
 from django.contrib.auth.models import Group
 from rest_framework import views, status
 from rest_framework.response import Response
@@ -406,6 +406,7 @@ class QuestionAnswerListCreateView(APIView):
 
 class DashboardView(APIView):
     permission_classes = [PermissionsManager]
+    codename = 'dashboard'
 
     def get(self, request):
         user = request.user
@@ -420,7 +421,6 @@ class DashboardView(APIView):
 
             today = timezone.now().date()
 
-            # ===== PATIENTS =====
             patients = CustomUser.objects.filter(
                 role="patient",
                 assigned_diets__doctor=user
@@ -428,20 +428,17 @@ class DashboardView(APIView):
 
             total_mothers = patients.count()
 
-            # ===== HIGH RISK =====
             high_risk = HealthStatus.objects.filter(
                 patient__in=patients,
                 health_status__in=["Poor", "Critical"]
             ).values("patient").distinct().count()
 
-            # ===== DUE IN 30 DAYS =====
             due_soon = Profile.objects.filter(
                 user__in=patients,
                 lmp_date__isnull=False,
                 lmp_date__lte=date.today() - timedelta(days=240)
             ).count()
 
-            # ===== TRIMESTER =====
             trimester = {"t1": 0, "t2": 0, "t3": 0}
 
             for p in Profile.objects.filter(user__in=patients):
@@ -471,6 +468,14 @@ class DashboardView(APIView):
 
             exercise_missed_patients = exercise_qs.values("user").distinct().count()
             exercise_missed_total = exercise_qs.count()
+
+            total_diet_plans = DietPlan.objects.filter(doctor=user).count()
+            
+            diet_completed_today = DietPlanStatus.objects.filter(
+                patient__in=patients,
+                date=today,
+                status="completed"
+            ).count()
 
             alerts = []
 
@@ -513,24 +518,25 @@ class DashboardView(APIView):
                 "active_mothers": total_mothers,
                 "high_risk_cases": high_risk,
                 "due_in_30_days": due_soon,
+                "total_diet_plans": total_diet_plans,
 
                 "trimester_overview": trimester,
 
-                # ✅ CORRECT COUNTS
                 "diet_missed_today": diet_missed_patients,
                 "diet_missed_total": diet_missed_total,
+                "diet_completed_today": diet_completed_today,
 
                 "exercise_missed_today": exercise_missed_patients,
                 "exercise_missed_total": exercise_missed_total,
 
-                # ✅ NEW ALERTS
                 "alerts": alerts,
 
-                # ✅ DATA
                 "recent_mothers": recent_mothers,
             })
 
         elif role == "patient":
+
+            today = timezone.now().date()
 
             total_diets = DietPlan.objects.filter(patient=user).count()
             total_exercises = ExerciseDate.objects.filter(patient=user).count()
@@ -553,26 +559,144 @@ class DashboardView(APIView):
                 if total_exercises else 0
             )
 
+            profile = getattr(user, "profile", None)
+            pregnancy_details = {}
+            if profile:
+                pregnancy_details = {
+                    "gestational_age": profile.gestational_age,
+                    "edd": profile.edd,
+                    "pregnancy_month": profile.pregnancy_month,
+                    "bmi": profile.bmi,
+                    "bmi_category": profile.bmi_category,
+                }
+
+            today_diet_status = DietPlanStatus.objects.filter(
+                patient=user,
+                date=today
+            ).values("status").annotate(count=Count("id"))
+            
+            today_meals = {item["status"]: item["count"] for item in today_diet_status}
+
+            today_exercise_status = ExerciseStatus.objects.filter(
+                user=user,
+                updated_at__date=today
+            ).values("status").annotate(count=Count("id"))
+            
+            today_exercises = {item["status"]: item["count"] for item in today_exercise_status}
+
+            today_steps = DailyStepCount.objects.filter(
+                patient=user,
+                date=today
+            ).first()
+
+            upcoming_diet_plans = DietPlanDate.objects.filter(
+                diet_plan__patient=user,
+                date__gte=today
+            ).order_by("date")[:5]
+
             response_data.update({
                 "total_diets": total_diets,
                 "total_exercises": total_exercises,
                 "latest_health_status": latest_health_status.health_status if latest_health_status else "No status",
                 "average_calories_burned_per_week": avg_calories_burned,
                 "goal_achievement_rate": goal_achievement_rate,
+                "pregnancy_details": pregnancy_details,
+                "today_meals": today_meals,
+                "today_exercises": today_exercises,
+                "today_steps": {
+                    "steps": today_steps.steps if today_steps else 0,
+                    "goal": today_steps.goal_steps if today_steps else 0,
+                    "status": today_steps.status if today_steps else "low",
+                } if today_steps else {"steps": 0, "goal": 0, "status": "low"},
+                "upcoming_diet_dates": [d.date for d in upcoming_diet_plans],
             })
 
-        elif role == "admin":
+        elif role in ["admin", "superadmin"]:
+
+            today = timezone.now().date()
+            this_month_start = today.replace(day=1)
 
             total_patients = CustomUser.objects.filter(role="patient").count()
             total_doctors = CustomUser.objects.filter(role="doctor").count()
             total_diet_plans = DietPlan.objects.count()
             total_exercises = Exercise.objects.count()
+            total_admins = CustomUser.objects.filter(role="admin").count()
+
+            new_patients_this_month = CustomUser.objects.filter(
+                role="patient",
+                date_joined__gte=this_month_start
+            ).count()
+            new_doctors_this_month = CustomUser.objects.filter(
+                role="doctor",
+                date_joined__gte=this_month_start
+            ).count()
+
+            diet_missed_today = DietPlanStatus.objects.filter(
+                date=today,
+                status="skipped"
+            ).count()
+            diet_completed_today = DietPlanStatus.objects.filter(
+                date=today,
+                status="completed"
+            ).count()
+            
+            exercise_missed_today = ExerciseStatus.objects.filter(
+                status="skipped",
+                updated_at__date=today
+            ).count()
+            exercise_completed_today = ExerciseStatus.objects.filter(
+                status="completed",
+                updated_at__date=today
+            ).count()
+
+            critical_cases = HealthStatus.objects.filter(
+                health_status="Critical"
+            ).select_related("patient").count()
+
+            diet_completion_rate = 0
+            total_diet_statuses_today = DietPlanStatus.objects.filter(date=today).count()
+            if total_diet_statuses_today > 0:
+                diet_completion_rate = round(
+                    (diet_completed_today / total_diet_statuses_today) * 100, 2
+                )
+
+            doctor_patient_counts = (
+                CustomUser.objects.filter(role="doctor")
+                .annotate(patient_count=Count("created_diets__patient", distinct=True))
+                .values("id", "username")
+                .annotate(
+                    first_name=F("profile__first_name"),
+                    last_name=F("profile__last_name")
+                )
+                .order_by("-patient_count")[:10]
+            )
+
+            recent_patients = (
+                CustomUser.objects.filter(role="patient")
+                .select_related("profile")
+                .order_by("-date_joined")[:5]
+                .values(
+                    "id", "date_joined",
+                    "profile__first_name", "profile__last_name"
+                )
+            )
 
             response_data.update({
                 "total_patients": total_patients,
                 "total_doctors": total_doctors,
                 "total_diet_plans": total_diet_plans,
                 "total_exercises": total_exercises,
+                "total_admins": total_admins,
+                "new_patients_this_month": new_patients_this_month,
+                "new_doctors_this_month": new_doctors_this_month,
+                "diet_missed_today": diet_missed_today,
+                "diet_completed_today": diet_completed_today,
+                "exercise_missed_today": exercise_missed_today,
+                "exercise_completed_today": exercise_completed_today,
+                "critical_cases": critical_cases,
+                "diet_completion_rate": diet_completion_rate,
+                "top_doctors": list(doctor_patient_counts),
+                "recent_patients": list(recent_patients),
             })
 
         else:
