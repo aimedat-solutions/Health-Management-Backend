@@ -405,8 +405,7 @@ class QuestionAnswerListCreateView(APIView):
 
 
 class DashboardView(APIView):
-    permission_classes = [PermissionsManager]
-    codename = 'dashboard'
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         user = request.user
