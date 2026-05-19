@@ -1,11 +1,12 @@
 from rest_framework import generics, permissions
 from .models import ( Profile, Question,DietPlan,Exercise, CustomUser,UserLegalConsent,PatientResponse, 
-                    Exercise,ExerciseDate,HealthStatus,AppContent,HealthEducation,HelpContent,ExerciseStatus,DietPlanStatus
+                    Exercise,ExerciseDate,HealthStatus,AppContent,HealthEducation,HelpContent,ExerciseStatus,DietPlanStatus,DietPlanDate
                     )
 from .serializers import ( ExerciseSerializer, ProfileSerializer, HealthEducationSerializer, DoctorRegistrationSerializer, QuestionSerializer,
                         QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,
                         PhoneNumberSerializer,HelpContentSerializer,LegalConsentSerializer
                         )
+from doctor.serializers import DietPlanReadSerializer, DietPlanCreateSerializer
 from django.db.models import Count,Avg
 from django.contrib.auth.models import Group
 from rest_framework import views, status
@@ -722,3 +723,63 @@ class HelpContentView(APIView):
             qs = qs.filter(content_type=content_type)
 
         return Response(HelpContentSerializer(qs, many=True).data)
+
+class AdminDietPlanListView(generics.ListAPIView):
+    """Admin/Superadmin can view all diet plans with doctor and patient info"""
+    serializer_class = DietPlanReadSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = DietPlanFilter
+
+    def get_queryset(self):
+        qs = DietPlan.objects.prefetch_related(
+            "meals__meal_portions",
+            "diet_dates",
+            "patient",
+            "doctor"
+        ).order_by("-id")
+        
+        doctor_id = self.request.query_params.get("doctor_id")
+        patient_id = self.request.query_params.get("patient_id")
+        date = self.request.query_params.get("date")
+        
+        if doctor_id:
+            qs = qs.filter(doctor_id=doctor_id)
+        if patient_id:
+            qs = qs.filter(patient_id=patient_id)
+        if date:
+            qs = qs.filter(diet_dates__date=date)
+        
+        return qs.distinct()
+
+class AdminDoctorDietPlansView(generics.ListAPIView):
+    """Admin/Superadmin can view diet plans assigned by a specific doctor"""
+    serializer_class = DietPlanReadSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+
+    def get_queryset(self):
+        doctor_id = self.kwargs.get('doctor_id')
+        qs = DietPlan.objects.filter(doctor_id=doctor_id).prefetch_related(
+            "meals__meal_portions",
+            "diet_dates",
+            "patient",
+            "doctor"
+        ).order_by("-id")
+        
+        patient_id = self.request.query_params.get("patient_id")
+        if patient_id:
+            qs = qs.filter(patient_id=patient_id)
+        
+        return qs.distinct()
+
+class AdminDoctorPatientsView(generics.ListAPIView):
+    """Admin/Superadmin can view all patients assigned to a specific doctor"""
+    serializer_class = CustomUserDetailsSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+
+    def get_queryset(self):
+        doctor_id = self.kwargs.get('doctor_id')
+        return CustomUser.objects.filter(
+            role='patient',
+            assigned_diets__doctor_id=doctor_id
+        ).distinct().order_by("-id")
