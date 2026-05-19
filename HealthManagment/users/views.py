@@ -276,7 +276,11 @@ class DoctorListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAdmin]
 
     def perform_create(self, serializer):
-        serializer.save(role='doctor')
+        user = serializer.save(role='doctor')
+        doctor_group, created = Group.objects.get_or_create(name="doctor")
+        user.groups.add(doctor_group)
+        if not Profile.objects.filter(user=user).exists():
+            Profile.objects.create(user=user)
 
 class DoctorDetailView(generics.RetrieveUpdateDestroyAPIView):
     """Only Admins can manage Doctors"""
