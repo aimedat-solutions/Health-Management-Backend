@@ -1,10 +1,10 @@
 from django.urls import path,include
 from rest_framework.routers import DefaultRouter
 from .views import ( ExerciseListCreateView,ExerciseDetailView,HealthEducationView,
-SendOrResendSMSAPIView,AdminCreateView,DoctorListCreateView,DoctorDetailView,
-UserListCreateView, UserDetailView,QuestionListCreateView, QuestionDetailView, ProfileAPIView,
-CustomLoginView,SyncStepsView, TodayStepsView, WeeklyStepsView,AppContentView,HelpContentView,
-AcceptLegalView
+ SendOrResendSMSAPIView,AdminCreateView,DoctorListCreateView,DoctorDetailView,
+ UserListCreateView, UserDetailView,QuestionListCreateView, QuestionDetailView, ProfileAPIView,
+ CustomLoginView,SyncStepsView, TodayStepsView, WeeklyStepsView,AppContentView,HelpContentView,
+ AcceptLegalView,AdminDietPlanListView,AdminDoctorDietPlansView,AdminDoctorPatientsView
 )
 from doctor.views import MealPortionViewSet
 app_name = 'users'
@@ -36,4 +36,8 @@ urlpatterns = [
     path("steps/sync/", SyncStepsView.as_view()),
     path("steps/today/", TodayStepsView.as_view()),
     path("steps/weekly/", WeeklyStepsView.as_view()),
+    
+    path('dietplans/', AdminDietPlanListView.as_view(), name='admin-dietplan-list'),
+    path('doctors/<int:doctor_id>/dietplans/', AdminDoctorDietPlansView.as_view(), name='admin-doctor-dietplans'),
+    path('doctors/<int:doctor_id>/patients/', AdminDoctorPatientsView.as_view(), name='admin-doctor-patients'),
 ]
