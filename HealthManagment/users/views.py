@@ -374,20 +374,18 @@ class QuestionAnswerListCreateView(APIView):
     codename = 'patientresponse'
     
     def get(self, request):
-        """
-        Get all answers:
-        - If the user is a patient, return their own answers.
-        - If the user is a doctor, return answers from patients assigned to them.
-        """
         user = request.user
         if user.role == "patient":
             answers = PatientResponse.objects.filter(user=user)
         elif user.role == "doctor":
-            # Assuming reverse FK from User (patients) to doctor is `assigned_doctor`
-            answers = PatientResponse.objects.filter()
+            patient_ids = CustomUser.objects.filter(
+                role="patient",
+                assigned_diets__doctor=user
+            ).values_list("id", flat=True).distinct()
+            answers = PatientResponse.objects.filter(user_id__in=patient_ids)
         else:
             return Response({"detail": "Unauthorized user."}, status=status.HTTP_403_FORBIDDEN)
-        serializer = QuestionAnswerSerializer(answers, many=True)
+        serializer = QuestionAnswerSerializer(answers, many=True, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request):
