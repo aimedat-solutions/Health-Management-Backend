@@ -124,10 +124,18 @@ class DietPlanReadSerializer(serializers.ModelSerializer):
     meals = DietPlanMealSerializer(many=True, read_only=True)
     dates = serializers.SerializerMethodField()
     patient_name = serializers.CharField(source="patient.profile.first_name", read_only=True)
+    doctor_id = serializers.IntegerField(source="doctor.id", read_only=True)
+    doctor_name = serializers.SerializerMethodField()
 
     class Meta:
         model = DietPlan
-        fields = ["id", "patient", "patient_name", "dates", "meals"]
+        fields = ["id", "patient", "patient_name", "doctor_id", "doctor_name", "dates", "meals"]
+
+    def get_doctor_name(self, obj):
+        profile = getattr(obj.doctor, "profile", None)
+        first_name = getattr(profile, "first_name", "") or ""
+        last_name = getattr(profile, "last_name", "") or ""
+        return f"{first_name} {last_name}".strip() or "Doctor"
 
     def get_dates(self, obj):
         return [date.date for date in obj.diet_dates.all()]
