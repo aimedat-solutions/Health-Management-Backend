@@ -11,8 +11,7 @@ from .views import (
 )
 from rest_framework.routers import DefaultRouter
 from users.views import (
-QuestionAnswerListCreateView,
-DashboardView,DoctorRegistrationAPIView,
+QuestionAnswerListCreateView,DoctorRegistrationAPIView,
 ExerciseListCreateView
 )
 from patient.views import LabReportViewSet
@@ -27,7 +26,6 @@ labreport_list = LabReportViewSet.as_view({"get": "list"})
 
 urlpatterns = [
     path('', include(router.urls)),
-    path('dashboard/', DashboardView.as_view(), name='dashboard'),
     path("lab-reports/", labreport_list, name="labreport-list"),
     path('doctor-register/', DoctorRegistrationAPIView.as_view(), name='register'),
     path('exercises/', ExerciseListCreateView.as_view(), name='exercise-list-create'),
