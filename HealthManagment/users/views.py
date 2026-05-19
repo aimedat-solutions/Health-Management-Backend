@@ -22,7 +22,7 @@ from django.conf import settings
 from django.contrib.auth import logout as django_logout
 from django.core.exceptions import ObjectDoesNotExist
 from drf_spectacular.utils import extend_schema
-from users.permissions import PermissionsManager,IsSuperAdmin, IsAdmin
+from users.permissions import PermissionsManager,IsSuperAdmin, IsAdmin, IsAdminOrSuperAdmin
 from rest_framework import viewsets
 from django.contrib.auth.hashers import make_password
 from django.utils.crypto import get_random_string
@@ -270,10 +270,10 @@ class AdminCreateView(generics.CreateAPIView):
         user.save()
 
 class DoctorListCreateView(generics.ListCreateAPIView):
-    """Only Admins can create and list Doctors"""
+    """Admins can create and list Doctors, Superadmins have full access"""
     queryset = CustomUser.objects.filter(role='doctor')
     serializer_class = CustomUserDetailsSerializer
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAdminOrSuperAdmin]
 
     def perform_create(self, serializer):
         user = serializer.save(role='doctor')
@@ -283,10 +283,10 @@ class DoctorListCreateView(generics.ListCreateAPIView):
             Profile.objects.create(user=user)
 
 class DoctorDetailView(generics.RetrieveUpdateDestroyAPIView):
-    """Only Admins can manage Doctors"""
+    """Admins can view/update Doctors, Superadmins have full access including delete"""
     queryset = CustomUser.objects.filter(role='doctor')
     serializer_class = CustomUserDetailsSerializer
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAdminOrSuperAdmin]
  
     
 class DoctorRegistrationAPIView(APIView):
