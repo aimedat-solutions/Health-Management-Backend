@@ -68,7 +68,7 @@ class PatientManagementViewSet(viewsets.ModelViewSet):
         data = {
             "patient_details": PatientSerializer(patient).data,
             "assigned_exercises": ExerciseDateSerializer(assigned_exercises, many=True).data,
-            "assigned_diet_plans": DietPlanReadSerializer(diet_plans, many=True).data,
+            "assigned_diet_plans": DietPlanReadSerializer(diet_plans, many=True, context={'request': request}).data,
             "lab_reports": LabReportSerializer(lab_reports, many=True).data,
             "questions": PatientResponseSerializer(questions, many=True).data
         }
