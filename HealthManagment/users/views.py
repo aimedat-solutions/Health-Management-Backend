@@ -1,10 +1,11 @@
+from collections import defaultdict
 from rest_framework import generics, permissions
 from .models import ( Profile, Question,DietPlan,Exercise, CustomUser,UserLegalConsent,PatientResponse, 
                     Exercise,ExerciseDate,HealthStatus,AppContent,HealthEducation,HelpContent,ExerciseStatus,DietPlanStatus,DietPlanDate
                     )
 from .serializers import ( ExerciseSerializer, ProfileSerializer, HealthEducationSerializer, DoctorRegistrationSerializer, QuestionSerializer,
                         QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,
-                        PhoneNumberSerializer,HelpContentSerializer,LegalConsentSerializer
+                        PhoneNumberSerializer,HelpContentSerializer,LegalConsentSerializer,DoctorPatientResponseSerializer,DoctorQuestionResponseSerializer
                         )
 from doctor.serializers import DietPlanReadSerializer, DietPlanCreateSerializer
 from django.db.models import Count,Avg,F
@@ -377,16 +378,60 @@ class QuestionAnswerListCreateView(APIView):
         user = request.user
         if user.role == "patient":
             answers = PatientResponse.objects.filter(user=user)
+            serializer = QuestionAnswerSerializer(answers, many=True, context={'request': request})
+            return Response(serializer.data, status=status.HTTP_200_OK)
         elif user.role == "doctor":
             patient_ids = CustomUser.objects.filter(
                 role="patient",
                 assigned_diets__doctor=user
             ).values_list("id", flat=True).distinct()
-            answers = PatientResponse.objects.filter(user_id__in=patient_ids)
+
+            answers = PatientResponse.objects.filter(
+                user_id__in=patient_ids
+            ).select_related('question', 'user', 'selected_option', 'question__parent').order_by('user_id', 'question__parent_id', 'question_id', 'created_at')
+
+            patient_id_filter = request.query_params.get("patient_id")
+            if patient_id_filter:
+                answers = answers.filter(user_id=patient_id_filter)
+
+            date_filter = request.query_params.get("date")
+            if date_filter:
+                answers = answers.filter(created_at__date=date_filter)
+
+            grouped_by_patient = defaultdict(list)
+            for answer in answers:
+                grouped_by_patient[answer.user.id].append(answer)
+
+            result = []
+            for patient_id, responses in grouped_by_patient.items():
+                patient = responses[0].user
+                profile = getattr(patient, "profile", None)
+                first_name = getattr(profile, "first_name", "") or ""
+                last_name = getattr(profile, "last_name", "") or ""
+
+                top_level = [r for r in responses if r.question.parent_id is None]
+                sub_responses = defaultdict(list)
+                for r in responses:
+                    if r.question.parent_id is not None:
+                        sub_responses[r.question.parent_id].append(r)
+
+                serialized_responses = []
+                for response in top_level:
+                    response_context = {'request': request, 'sub_responses': sub_responses}
+                    serialized_responses.append(
+                        DoctorQuestionResponseSerializer(response, context=response_context).data
+                    )
+
+                result.append({
+                    "patient_id": patient_id,
+                    "patient_name": f"{first_name} {last_name}".strip() or patient.username,
+                    "phone_number": str(patient.phone_number) if patient.phone_number else "",
+                    "responses": serialized_responses,
+                })
+
+            return Response(result, status=status.HTTP_200_OK)
         else:
             return Response({"detail": "Unauthorized user."}, status=status.HTTP_403_FORBIDDEN)
-        serializer = QuestionAnswerSerializer(answers, many=True, context={'request': request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request):
         """
