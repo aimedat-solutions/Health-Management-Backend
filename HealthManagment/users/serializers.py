@@ -411,11 +411,11 @@ class QuestionAnswerSerializer(serializers.ModelSerializer):
         return QuestionSerializer(obj.question, context=self.context).data
 
 class DoctorQuestionResponseSerializer(serializers.Serializer):
-    question_id = serializers.IntegerField()
-    question_text = serializers.CharField()
+    question_id = serializers.IntegerField(source="question.id")
+    question_text = serializers.CharField(source="question.question_text")
     question_image = serializers.SerializerMethodField()
-    category = serializers.CharField()
-    type = serializers.CharField()
+    category = serializers.CharField(source="question.category")
+    type = serializers.CharField(source="question.type")
     options = OptionSerializer(many=True, source="question.options", read_only=True)
     selected_option = OptionSerializer(read_only=True)
     response_text = serializers.CharField()
