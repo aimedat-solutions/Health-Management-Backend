@@ -44,9 +44,10 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
     portions = MealPortionSerializer(source="meal_portions", many=True)
     time_range = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
+    statuses_by_date = serializers.SerializerMethodField()
     class Meta:
         model = DietPlanMeal
-        fields = ["id", "meal_type", "time_range", "portions", "status"]
+        fields = ["id", "meal_type", "time_range", "portions", "status", "statuses_by_date"]
 
     def get_time_range(self, obj):
         if obj.start_time and obj.end_time:
@@ -70,6 +71,21 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
         ).first()
 
         return status_obj.status if status_obj else "pending"
+
+    def get_statuses_by_date(self, obj):
+        statuses = DietPlanStatus.objects.filter(
+            patient=obj.diet_plan.patient,
+            diet_plan=obj
+        ).order_by("date")
+
+        return [
+            {
+                "date": s.date,
+                "status": s.status,
+                "reason_audio": s.reason_audio.url if s.reason_audio else None,
+            }
+            for s in statuses
+        ]
     
 class DietPlanDateSerializer(serializers.ModelSerializer):
     class Meta:
