@@ -402,12 +402,54 @@ class QuestionCreateSerializer(serializers.ModelSerializer):
 class QuestionAnswerSerializer(serializers.ModelSerializer):
     questions = serializers.SerializerMethodField()
     user_info = ProfileSerializer(source="user.profile", read_only=True)
+    selected_option = OptionSerializer(read_only=True)
     class Meta:
         model = PatientResponse
-        fields = ["id", "user", "questions",  "response_text", "user_info", "created_at", "created_by", "updated_at", "updated_by"]
+        fields = ["id", "user", "questions", "selected_option", "response_text", "user_info", "created_at", "created_by", "updated_at", "updated_by"]
         
     def get_questions(self, obj):
         return QuestionSerializer(obj.question, context=self.context).data
+
+class DoctorQuestionResponseSerializer(serializers.Serializer):
+    question_id = serializers.IntegerField(source="question.id")
+    question_text = serializers.CharField(source="question.question_text")
+    question_image = serializers.SerializerMethodField()
+    category = serializers.CharField(source="question.category")
+    type = serializers.CharField(source="question.type")
+    options = OptionSerializer(many=True, source="question.options", read_only=True)
+    selected_option = OptionSerializer(read_only=True)
+    response_text = serializers.CharField()
+    answered_at = serializers.DateTimeField(source="created_at")
+    sub_questions = serializers.SerializerMethodField()
+
+    def get_question_image(self, obj):
+        request = self.context.get('request')
+        if obj.question.question_image and request:
+            return request.build_absolute_uri(obj.question.question_image.url)
+        return None
+
+    def get_sub_questions(self, obj):
+        sub_responses = self.context.get('sub_responses', {}).get(obj.question.id, [])
+        return [
+            {
+                "question_id": sr.question.id,
+                "question_text": sr.question.question_text,
+                "question_image": self.get_question_image(sr),
+                "category": sr.question.category,
+                "type": sr.question.type,
+                "options": OptionSerializer(sr.question.options.all(), many=True).data,
+                "selected_option": OptionSerializer(sr.selected_option).data if sr.selected_option else None,
+                "response_text": sr.response_text,
+                "answered_at": sr.created_at,
+            }
+            for sr in sub_responses
+        ]
+
+class DoctorPatientResponseSerializer(serializers.Serializer):
+    patient_id = serializers.IntegerField()
+    patient_name = serializers.CharField()
+    phone_number = serializers.CharField()
+    responses = DoctorQuestionResponseSerializer(many=True)
         
         
         
