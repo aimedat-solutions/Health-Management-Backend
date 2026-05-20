@@ -524,27 +524,10 @@ class PatientDietQuestion(AuditModel):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     class Meta:
-        unique_together = ("patient", "date")
         ordering = ["-date"]
 
     def __str__(self):
         return f"Diet question for {self.patient.username} on {self.date}"
-
-    @staticmethod
-    def is_due_for_update(patient):
-        """
-        Check if patient can submit diet again based on N days rule
-        """
-        last_entry = PatientDietQuestion.objects.filter(
-            patient=patient
-        ).order_by('-date').first()
-
-        if not last_entry:
-            return True
-
-        return timezone.now().date() >= last_entry.date + timedelta(
-            days=int(getattr(settings, "DIET_QUESTION_ADD_DAYS", 3))
-        )
         
         
     ####################################################### LabReport Model ################################################################################################
