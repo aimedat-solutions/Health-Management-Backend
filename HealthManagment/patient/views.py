@@ -301,14 +301,22 @@ class DietQuestionsView(generics.ListCreateAPIView):
 
         last_diet = queryset.first()
 
-        is_due = PatientDietQuestion.is_due_for_update(user)
-
         if not last_diet:
             return Response({
-                "message": "You haven’t added your diet details yet.",
+                "message": "You haven't added your diet details yet.",
                 "diet_logs": [],
-                "ask_diet_question": True
+                "can_submit": True
             }, status=200)
+
+        return Response({
+            "message": "Here are your diet details.",
+            "diet_logs": DietQuestionSerializer(
+                queryset,
+                many=True,
+                context={"request": request}
+            ).data,
+            "can_submit": True
+        }, status=200)
 
         return Response({
             "message": "Here are your diet details.",
@@ -340,16 +348,8 @@ class DietQuestionsView(generics.ListCreateAPIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if not PatientDietQuestion.is_due_for_update(user):
-            return Response({
-                "message": "You’ve already updated your diet recently. Please try again after a few days."
-            }, status=400)
-
-        today = timezone.now().date()
-
         diet = PatientDietQuestion.objects.create(
             patient=user,
-            date=today,
             breakfast=request.data.get("breakfast"),
             lunch=request.data.get("lunch"),
             eveningSnack=request.data.get("eveningSnack"),
@@ -369,12 +369,11 @@ class DietQuestionsView(generics.ListCreateAPIView):
                 diet,
                 context={"request": request}
             ).data,
-            "ask_diet_question": False
         }, status=status.HTTP_201_CREATED)
 class DietQuestionStatusView(APIView):
     """
-    GET: Returns whether the patient should be asked diet questions (every 3 days).
-    POST: Allows skipping the question by setting ask_diet_question = False.
+    GET: Returns whether the patient can submit diet questions (always True now).
+    POST: Allows skipping the question.
     """
     permission_classes = [PermissionsManager]
     codename = "patientdietquestion"
@@ -384,63 +383,21 @@ class DietQuestionStatusView(APIView):
         if user.role != "patient":
             return Response({"detail": "Only patients can access this."}, status=403)
 
-        interval_days = int(getattr(settings, "DIET_QUESTION_ADD_DAYS", 3))
-        today = timezone.now().date()
-
         last_entry = PatientDietQuestion.objects.filter(patient=user).order_by("-date").first()
 
-        # Skipped last time — return skip response
-        if user.ask_diet_question is False and not last_entry:
-            return Response({
-                "should_ask": False,
-                "last_answered_date": None,
-                "next_due_date": None
-            })
-
-        # If patient submitted last time
-        if last_entry:
-            last_date = last_entry.date
-            next_due_date = last_date + timedelta(days=interval_days)
-
-            if today >= next_due_date and not user.ask_diet_question:
-                user.ask_diet_question = True
-                user.save(update_fields=["ask_diet_question"])
-
-            return Response({
-                "should_ask": user.ask_diet_question,
-                "last_answered_date": last_date,
-                "next_due_date": next_due_date
-            })
-
-        # First time or ask_diet_question manually true
-        if user.ask_diet_question:
-            return Response({
-                "should_ask": True,
-                "last_answered_date": None,
-                "next_due_date": today
-            })
-
-        # Fallback (shouldn't reach here usually)
         return Response({
-            "should_ask": False,
-            "last_answered_date": None,
-            "next_due_date": None
+            "can_submit": True,
+            "last_entry": DietQuestionSerializer(last_entry, context={"request": request}).data if last_entry else None,
         })
 
     def post(self, request, *args, **kwargs):
-        """
-        Patient skips diet questions — mark as skipped.
-        """
         user = request.user
         if user.role != "patient":
             return Response({"detail": "Only patients can perform this action."}, status=403)
 
-        user.ask_diet_question = False
-        user.save(update_fields=["ask_diet_question"])
-
         return Response({
-            "message": "Diet question skipped.",
-            "should_ask": False
+            "message": "You can submit diet questions anytime.",
+            "can_submit": True
         })
 class DietPlanView(generics.ListAPIView):
     serializer_class = DietPlanSerializer
