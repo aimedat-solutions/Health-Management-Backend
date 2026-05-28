@@ -129,9 +129,10 @@ class DietPlanCreateSerializer(serializers.ModelSerializer):
             DietPlanDate.objects.create(diet_plan=diet_plan, date=date)
             
         patient = diet_plan.patient
-        if hasattr(patient, "verified"):  
+        if hasattr(patient, "verified"):
+            patient.is_verified = True
             patient.verified = True
-            patient.save(update_fields=["verified"])
+            patient.save(update_fields=["verified", "is_verified"])
 
         return diet_plan
 
