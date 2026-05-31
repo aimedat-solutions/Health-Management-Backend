@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from users.models import CustomUser, DietPlan, MealPortion, Exercise, LabReport, PatientResponse, PatientDietQuestion, DietPlanDate,ExerciseDate
 from django.shortcuts import get_object_or_404
+from users.nutrition_service import fetch_nutrition_data
 from .serializers import PatientSerializer, DietPlanCreateSerializer, MealPortionSerializer,DietPlanReadSerializer,PatientDietQuestionSerializer,ExcerciseDateAssignSerializer,DoctorExerciseResponseSerializer
 from users.serializers import ExerciseDateSerializer
 from patient.serializers import LabReportSerializer, PatientResponseSerializer
@@ -81,6 +82,30 @@ class MealPortionViewSet(viewsets.ModelViewSet):
     permission_classes = [IsDoctorOrAdmin]
     filter_backends = [filters.SearchFilter]
     search_fields = ["name"]
+
+    def _enrich_with_nutrition(self, instance):
+        print(f"--- AI Nutrition: fetching data for '{instance.name}' ---")
+        data = fetch_nutrition_data(instance.name)
+        print(data)
+        if data:
+            for field, value in data.items():
+                setattr(instance, field, value)
+            instance.save(update_fields=list(data.keys()))
+            print(f"--- AI Nutrition: saved data for '{instance.name}' (calories={data.get('calories')}) ---")
+        else:
+            print(f"--- AI Nutrition: no data found for '{instance.name}' ---")
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        self._enrich_with_nutrition(instance)
+
+    def perform_update(self, serializer):
+        name_changed = (
+            self.get_object().name != serializer.validated_data.get("name")
+        )
+        instance = serializer.save()
+        if name_changed:
+            self._enrich_with_nutrition(instance)
 
 class DietPlanViewSet(viewsets.ModelViewSet):
     """
@@ -258,5 +283,8 @@ class DoctorDietLogsView(APIView):
 
     def get(self, request):
         queryset = PatientDietQuestion.objects.all().order_by("-date")
+        patient_id = request.query_params.get("patient_id")
+        if patient_id:
+            queryset = queryset.filter(patient_id=patient_id)
         serializer = PatientDietQuestionSerializer(queryset, many=True, context={"request": request})
         return Response(serializer.data)

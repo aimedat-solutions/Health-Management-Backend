@@ -217,9 +217,8 @@ class ProfileAPIView(APIView):
     """
     API for retrieving and updating user profiles.
     """
-    permission_classes = [PermissionsManager]
+    permission_classes = [IsAuthenticated]
     serializer_class = ProfileSerializer
-    codename = 'profile'
     
     def get_object(self):
         profile, _ = Profile.objects.get_or_create(user=self.request.user)
@@ -232,12 +231,16 @@ class ProfileAPIView(APIView):
     
     def put(self, request):
         """
-        Update the profile of the logged-in user.
+        Update the profile and email of the logged-in user.
         """
         profile = self.get_object()
-        serializer = ProfileSerializer(profile, data=request.data, partial=True)  # allows partial updates
+        serializer = ProfileSerializer(profile, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            email = request.data.get("email")
+            if email and request.user.email != email:
+                request.user.email = email
+                request.user.save(update_fields=["email"])
             serializer = self.serializer_class(profile, context={'request': request})
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
