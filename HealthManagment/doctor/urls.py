@@ -7,7 +7,8 @@ from .views import (
     ReviewHealthStatusView,
     DoctorAssignExerciseView,
     DoctorExerciseReviewView,
-    DoctorDietLogsView
+    DoctorDietLogsView,
+    DoctorExerciseLogsView
 )
 from rest_framework.routers import DefaultRouter
 from users.views import (
@@ -35,4 +36,5 @@ urlpatterns = [
     path('review-health-status/', ReviewHealthStatusView.as_view(), name='review-health-status'),
     path("patientresponse/", QuestionAnswerListCreateView.as_view(), name="answers"),
     path("diet-questions-logs/", DoctorDietLogsView.as_view()),
+    path("exercise-logs/", DoctorExerciseLogsView.as_view()),
 ]

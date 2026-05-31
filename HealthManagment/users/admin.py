@@ -1,6 +1,6 @@
 from django.contrib import admin
 from .models import (
-    CustomUser, Profile, Exercise, DoctorExerciseResponse, Question, PatientDietQuestion,HealthEducation,HelpContent,
+    CustomUser, Profile, Exercise, DoctorExerciseResponse, Question, PatientDietQuestion, PatientExerciseLog, HealthEducation,HelpContent,
     Option, DietPlanMeal, PatientResponse, LabReport, HealthStatus,MealPortion,DietPlan,DietPlanDate,ExerciseDate,DailyStepCount,AppContent
 )
 
@@ -23,6 +23,7 @@ admin.site.register(PatientResponse)
 
 admin.site.register(AppContent)
 
+admin.site.register(PatientExerciseLog)
 admin.site.register(PatientDietQuestion)
 admin.site.register(LabReport)
 admin.site.register(HealthStatus)

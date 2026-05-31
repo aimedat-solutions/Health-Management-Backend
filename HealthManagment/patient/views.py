@@ -1,10 +1,10 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from users.models import ExerciseDate, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, Option, DietPlanStatus,Exercise,ExerciseStatus,HealthStatus,DietPlanDate,DietPlanMeal,DietPlan,ExtraMeal, DietPlanCompletedPortion,MealPortion
+from users.models import ExerciseDate, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, PatientExerciseLog, Option, DietPlanStatus,Exercise,ExerciseStatus,HealthStatus,DietPlanDate,DietPlanMeal,DietPlan,ExtraMeal, DietPlanCompletedPortion,MealPortion
 from .serializers import ( PatientResponseSerializer,EmptyLabReportSerializer, HealthStatusSerializer, LabReportSerializer, 
                           QuestionSerializer, DietQuestionSerializer, DietPlanSerializer, DietPlanStatusSerializer, CurrentMealSerializer, BulkPatientResponseSerializer,
-                          ExerciseStatusSerializer, AssignedExerciseSerializer)
+                          ExerciseStatusSerializer, AssignedExerciseSerializer, ExerciseLogSerializer)
 from users.permissions import PermissionsManager,IsDoctorUser,IsPatientUser
 from rest_framework import viewsets, permissions,generics,status
 from rest_framework import serializers
@@ -711,4 +711,93 @@ class QuestionFlowStatusView(APIView):
             "status": "wait",
             "next_question_date": next_date,
             "message": f"Next questions available on {next_date}" if next_date else "No previous answer date found."
+        })
+
+class ExerciseLogView(generics.ListCreateAPIView):
+    permission_classes = [PermissionsManager]
+    serializer_class = ExerciseLogSerializer
+    parser_classes = [MultiPartParser, FormParser]
+    codename = 'patientexerciselog'
+
+    def get_queryset(self):
+        return PatientExerciseLog.objects.filter(
+            patient=self.request.user
+        ).order_by("-date")
+
+    def get(self, request):
+        user = request.user
+        if user.role != "patient":
+            return Response(
+                {"message": "This feature is only available for patients."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        queryset = self.get_queryset()
+
+        return Response({
+            "message": "Here are your exercise logs.",
+            "exercise_logs": ExerciseLogSerializer(
+                queryset,
+                many=True,
+                context={"request": request}
+            ).data,
+            "can_submit": True
+        }, status=200)
+
+    def post(self, request):
+        user = request.user
+        if user.role != "patient":
+            return Response(
+                {"message": "This feature is only available for patients."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if not user.initial_question_completed:
+            return Response(
+                {"message": "Please complete your initial questions before adding exercise logs."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        log = PatientExerciseLog.objects.create(
+            patient=user,
+            date=request.data.get("date"),
+            morning=request.data.get("morning"),
+            evening=request.data.get("evening"),
+            morning_audio=request.FILES.get("morning_audio"),
+            evening_audio=request.FILES.get("evening_audio"),
+        )
+
+        user.is_first_login = False
+        user.save()
+
+        return Response({
+            "message": "Your exercise log has been saved.",
+            "exercise_log": ExerciseLogSerializer(
+                log,
+                context={"request": request}
+            ).data,
+        }, status=status.HTTP_201_CREATED)
+
+
+class ExerciseLogStatusView(APIView):
+    permission_classes = [PermissionsManager]
+    codename = "patientexerciselog"
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        if user.role != "patient":
+            return Response({"detail": "Only patients can access this."}, status=403)
+
+        return Response({
+            "can_submit": True,
+        })
+
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        if user.role != "patient":
+            return Response({"detail": "Only patients can perform this action."}, status=403)
+
+        return Response({
+            "message": "You can submit exercise logs anytime.",
+            "can_submit": True
         })

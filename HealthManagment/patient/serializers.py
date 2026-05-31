@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from users.models import ExerciseDate, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, DietPlanStatus, ExerciseStatus,DietPlanMeal,DietPlanDate,DietPlanCompletedPortion,ExtraMeal
+from users.models import ExerciseDate, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, PatientExerciseLog, DietPlanStatus, ExerciseStatus,DietPlanMeal,DietPlanDate,DietPlanCompletedPortion,ExtraMeal
 from users.serializers import OptionSerializer
 from django.utils import timezone
 from datetime import date
@@ -267,3 +267,15 @@ class AssignedExerciseSerializer(serializers.ModelSerializer):
             return status_obj.status if status_obj else "pending"
 
         return "pending"
+
+class ExerciseLogSerializer(serializers.ModelSerializer):
+    date = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PatientExerciseLog
+        fields = '__all__'
+
+    def get_date(self, obj):
+        if obj.date:
+            return obj.date.date().isoformat() if hasattr(obj.date, 'date') else obj.date
+        return None

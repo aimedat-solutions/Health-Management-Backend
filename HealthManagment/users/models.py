@@ -541,8 +541,28 @@ class PatientDietQuestion(AuditModel):
 
     def __str__(self):
         return f"Diet question for {self.patient.username} on {self.date}"
-        
-        
+
+
+class PatientExerciseLog(AuditModel):
+    patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, limit_choices_to={'role': 'patient'})
+    date = models.DateField(default=timezone.now)
+
+    morning = models.TextField(null=True, blank=True)
+    evening = models.TextField(null=True, blank=True)
+
+    morning_audio = models.FileField(upload_to="exercise_logs/audio/", null=True, blank=True)
+    evening_audio = models.FileField(upload_to="exercise_logs/audio/", null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-date"]
+
+    def __str__(self):
+        return f"Exercise log for {self.patient.username} on {self.date}"
+
+
     ####################################################### LabReport Model ################################################################################################
 class LabReport(AuditModel):
     """
