@@ -165,6 +165,7 @@ class CustomUserSerializer(serializers.ModelSerializer):
 class ProfileSerializer(serializers.ModelSerializer):
     role = serializers.CharField(source='user.role', read_only=True)
     phone_number = serializers.CharField(source='user.phone_number', read_only=True)
+    email = serializers.EmailField(source='user.email', read_only=True)
     profile_image = serializers.ImageField(required=False, allow_null=True)
     verified = serializers.BooleanField(source='user.verified', read_only=True)
     lmp_date = serializers.DateField(required=False, allow_null=True) 
@@ -172,7 +173,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
         fields = [
-            'id', 'role', 'phone_number', 'first_name', 'last_name', 'profile_image', 'date_of_birth', 'age', 'gender', 'occupation',
+            'id', 'role', 'phone_number', 'email', 'first_name', 'last_name', 'profile_image', 'date_of_birth', 'age', 'gender', 'occupation',
             'address', 'specialization', 'height', 'weight', 'verified',
             'lmp_date', 'pregnancy_details',
         ]

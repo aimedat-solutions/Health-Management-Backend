@@ -409,7 +409,20 @@ class MealPortion(AuditModel):
     """
     Defines meal portion categories for diet plans.
     """
-    name = models.CharField(max_length=255) 
+    name = models.CharField(max_length=255)
+    calories = models.FloatField(null=True, blank=True)
+    protein = models.FloatField(null=True, blank=True)
+    carbohydrates = models.FloatField(null=True, blank=True)
+    fat = models.FloatField(null=True, blank=True)
+    fiber = models.FloatField(null=True, blank=True)
+    sugar = models.FloatField(null=True, blank=True)
+    saturated_fat = models.FloatField(null=True, blank=True)
+    trans_fat = models.FloatField(null=True, blank=True)
+    cholesterol = models.FloatField(null=True, blank=True)
+    sodium = models.FloatField(null=True, blank=True)
+    serving_unit = models.CharField(max_length=100, null=True, blank=True)
+    serving_qty = models.FloatField(null=True, blank=True)
+    ai_generated = models.BooleanField(default=False)
     
     def __str__(self):
         return self.name
