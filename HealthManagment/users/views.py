@@ -1,7 +1,14 @@
+from collections import defaultdict
 from rest_framework import generics, permissions
-from .models import Profile, Question,DietPlan,Exercise, CustomUser,Option,PatientResponse, Exercise,ExerciseDate,HealthStatus
-from .serializers import ExerciseSerializer, ProfileSerializer, ExerciseDateSerializer, DoctorRegistrationSerializer, QuestionSerializer,QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,PhoneNumberSerializer,LabReportSerializer
-from django.db.models import Count,Avg
+from .models import ( Profile, Question,DietPlan,Exercise, CustomUser,UserLegalConsent,PatientResponse, 
+                    Exercise,ExerciseDate,HealthStatus,AppContent,HealthEducation,HelpContent,ExerciseStatus,DietPlanStatus,DietPlanDate
+                    )
+from .serializers import ( ExerciseSerializer, ProfileSerializer, HealthEducationSerializer, DoctorRegistrationSerializer, QuestionSerializer,
+                        QuestionAnswerSerializer,UserRegistrationSerializer,UserLoginSerializer,CustomUserDetailsSerializer,QuestionCreateSerializer,
+                        PhoneNumberSerializer,HelpContentSerializer,LegalConsentSerializer,DoctorPatientResponseSerializer,DoctorQuestionResponseSerializer
+                        )
+from doctor.serializers import DietPlanReadSerializer, DietPlanCreateSerializer
+from django.db.models import Count,Avg,F
 from django.contrib.auth.models import Group
 from rest_framework import views, status
 from rest_framework.response import Response
@@ -17,7 +24,7 @@ from django.conf import settings
 from django.contrib.auth import logout as django_logout
 from django.core.exceptions import ObjectDoesNotExist
 from drf_spectacular.utils import extend_schema
-from users.permissions import PermissionsManager,IsSuperAdmin, IsAdmin
+from users.permissions import PermissionsManager,IsSuperAdmin, IsAdmin, IsAdminOrSuperAdmin
 from rest_framework import viewsets
 from django.contrib.auth.hashers import make_password
 from django.utils.crypto import get_random_string
@@ -30,6 +37,21 @@ from .filters import CustomUserFilter, DietPlanFilter,ExerciseFilter
 import os
 from rest_framework.decorators import action
 from django.shortcuts import get_object_or_404
+from dotenv import load_dotenv
+from django.utils import timezone
+from datetime import timedelta
+
+from .models import DailyStepCount
+from .serializers import StepSyncSerializer, DailyStepSerializer,AppContentSerializer
+from .services import (
+    get_trimester,
+    has_diabetes,
+    calculate_step_goal,
+    classify_steps,
+    exercise_completed_today,
+    daily_activity_message
+)
+load_dotenv()  # reads .env file
 
 class UserRegistrationAPIView(APIView):
     serializer_class = UserRegistrationSerializer
@@ -152,42 +174,41 @@ class SendOrResendSMSAPIView(GenericAPIView):
     API endpoint to send OTP to the user's phone number.
     """
     def post(self, request):
-        phone_number = request.data.get("phone_number", None)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        phone_number = serializer.validated_data['phone_number']
         environment = os.getenv('DJANGO_ENV', 'development')
-        
-        if phone_number:
-            try:
-                user = CustomUser.objects.get(phone_number=phone_number)
 
-                if environment in ['production', 'staging']:
-                    send_otp(phone_number)  # Send OTP only in production or staging
-                    return Response({"message": "OTP sent for login.", "is_new_user": False}, status=status.HTTP_200_OK)
-                else:
-                    return Response({"message": "OTP sending is disabled in this environment."}, status=status.HTTP_200_OK)
+        try:
+            user = CustomUser.objects.get(phone_number=phone_number)
 
-            except CustomUser.DoesNotExist:
-                random_password = get_random_string(length=8)  # You can choose the length
-                hashed_password = make_password(random_password)
-                user = CustomUser(
-                    phone_number=phone_number, 
-                    role='patient', 
-                    username=phone_number, 
-                    is_first_login=True, 
-                )
-                user.set_password(hashed_password)
-                user.save()
-                group = Group.objects.get(name=user.role)
-                user.groups.add(group)
-                if not Profile.objects.filter(user=user).exists():
-                    Profile.objects.create(user=user)
+            if environment in ['production', 'staging']:
+                send_otp(str(phone_number))  # Send OTP only in production or staging
+                return Response({"message": "OTP sent for login.", "is_new_user": user.is_first_login}, status=status.HTTP_200_OK)
+            else:
+                return Response({"message": "OTP sending is disabled in this environment."}, status=status.HTTP_200_OK)
 
-                if environment in ['production', 'staging']:
-                    send_otp(phone_number)  # Send OTP only in production or staging
-                    return Response({"message": "OTP sent for registration.", "is_new_user": True}, status=status.HTTP_200_OK)
-                else:
-                    return Response({"message": "OTP sending is disabled in this environment."}, status=status.HTTP_200_OK)
-        else:
-            return Response({"error": "Phone number is required"}, status=status.HTTP_400_BAD_REQUEST)
+        except CustomUser.DoesNotExist:
+            random_password = get_random_string(length=8)  # You can choose the length
+            hashed_password = make_password(random_password)
+            user = CustomUser(
+                phone_number=phone_number, 
+                role='patient', 
+                username=str(phone_number), 
+                is_first_login=True, 
+            )
+            user.set_password(hashed_password)
+            user.save()
+            group = Group.objects.get(name=user.role)
+            user.groups.add(group)
+            if not Profile.objects.filter(user=user).exists():
+                Profile.objects.create(user=user)
+
+            if environment in ['production', 'staging']:
+                send_otp(str(phone_number))  # Send OTP only in production or staging
+                return Response({"message": "OTP sent for registration.", "is_new_user": user.is_first_login}, status=status.HTTP_200_OK)
+            else:
+                return Response({"message": "OTP sending is disabled in this environment."}, status=status.HTTP_200_OK)
         
         
 class ProfileAPIView(APIView):
@@ -195,30 +216,31 @@ class ProfileAPIView(APIView):
     """
     API for retrieving and updating user profiles.
     """
-    permission_classes = [PermissionsManager]
+    permission_classes = [IsAuthenticated]
     serializer_class = ProfileSerializer
-    codename = 'profile'
     
     def get_object(self):
         profile, _ = Profile.objects.get_or_create(user=self.request.user)
         return profile
     
     def get(self, request):
-        """
-        Retrieve the profile of the logged-in user.
-        """ 
-        profile, created = Profile.objects.get_or_create(user=request.user)  # Auto-create if missing
-        serializer = ProfileSerializer(profile, context={'request': request})
+        profile = self.get_object()
+        serializer = self.serializer_class(profile, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
-
+    
     def put(self, request):
         """
-        Update the profile of the logged-in user.
+        Update the profile and email of the logged-in user.
         """
         profile = self.get_object()
-        serializer = ProfileSerializer(profile, data=request.data, partial=True)  # allows partial updates
+        serializer = ProfileSerializer(profile, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            email = request.data.get("email")
+            if email and request.user.email != email:
+                request.user.email = email
+                request.user.save(update_fields=["email"])
+            serializer = self.serializer_class(profile, context={'request': request})
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
@@ -252,19 +274,23 @@ class AdminCreateView(generics.CreateAPIView):
         user.save()
 
 class DoctorListCreateView(generics.ListCreateAPIView):
-    """Only Admins can create and list Doctors"""
+    """Admins can create and list Doctors, Superadmins have full access"""
     queryset = CustomUser.objects.filter(role='doctor')
     serializer_class = CustomUserDetailsSerializer
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAdminOrSuperAdmin]
 
     def perform_create(self, serializer):
-        serializer.save(role='doctor')
+        user = serializer.save(role='doctor')
+        doctor_group, created = Group.objects.get_or_create(name="doctor")
+        user.groups.add(doctor_group)
+        if not Profile.objects.filter(user=user).exists():
+            Profile.objects.create(user=user)
 
 class DoctorDetailView(generics.RetrieveUpdateDestroyAPIView):
-    """Only Admins can manage Doctors"""
+    """Admins can view/update Doctors, Superadmins have full access including delete"""
     queryset = CustomUser.objects.filter(role='doctor')
     serializer_class = CustomUserDetailsSerializer
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAdminOrSuperAdmin]
  
     
 class DoctorRegistrationAPIView(APIView):
@@ -351,21 +377,63 @@ class QuestionAnswerListCreateView(APIView):
     codename = 'patientresponse'
     
     def get(self, request):
-        """
-        Get all answers:
-        - If the user is a patient, return their own answers.
-        - If the user is a doctor, return answers from patients assigned to them.
-        """
         user = request.user
         if user.role == "patient":
             answers = PatientResponse.objects.filter(user=user)
+            serializer = QuestionAnswerSerializer(answers, many=True, context={'request': request})
+            return Response(serializer.data, status=status.HTTP_200_OK)
         elif user.role == "doctor":
-            # Assuming reverse FK from User (patients) to doctor is `assigned_doctor`
-            answers = PatientResponse.objects.filter(user=user)
+            patient_ids = CustomUser.objects.filter(
+                role="patient",
+                assigned_diets__doctor=user
+            ).values_list("id", flat=True).distinct()
+
+            answers = PatientResponse.objects.filter(
+                user_id__in=patient_ids
+            ).select_related('question', 'user', 'selected_option', 'question__parent').order_by('user_id', 'question__parent_id', 'question_id', 'created_at')
+
+            patient_id_filter = request.query_params.get("patient_id")
+            if patient_id_filter:
+                answers = answers.filter(user_id=patient_id_filter)
+
+            date_filter = request.query_params.get("date")
+            if date_filter:
+                answers = answers.filter(created_at__date=date_filter)
+
+            grouped_by_patient = defaultdict(list)
+            for answer in answers:
+                grouped_by_patient[answer.user.id].append(answer)
+
+            result = []
+            for patient_id, responses in grouped_by_patient.items():
+                patient = responses[0].user
+                profile = getattr(patient, "profile", None)
+                first_name = getattr(profile, "first_name", "") or ""
+                last_name = getattr(profile, "last_name", "") or ""
+
+                top_level = [r for r in responses if r.question.parent_id is None]
+                sub_responses = defaultdict(list)
+                for r in responses:
+                    if r.question.parent_id is not None:
+                        sub_responses[r.question.parent_id].append(r)
+
+                serialized_responses = []
+                for response in top_level:
+                    response_context = {'request': request, 'sub_responses': sub_responses}
+                    serialized_responses.append(
+                        DoctorQuestionResponseSerializer(response, context=response_context).data
+                    )
+
+                result.append({
+                    "patient_id": patient_id,
+                    "patient_name": f"{first_name} {last_name}".strip() or patient.username,
+                    "phone_number": str(patient.phone_number) if patient.phone_number else "",
+                    "responses": serialized_responses,
+                })
+
+            return Response(result, status=status.HTTP_200_OK)
         else:
             return Response({"detail": "Unauthorized user."}, status=status.HTTP_403_FORBIDDEN)
-        serializer = QuestionAnswerSerializer(answers, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request):
         """
@@ -382,15 +450,11 @@ class QuestionAnswerListCreateView(APIView):
 
 
 class DashboardView(APIView):
-    permission_classes = [PermissionsManager]  # Ensure only authenticated users can access
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        """
-        API Endpoint to fetch dashboard details for Doctor, Patient, and Admin.
-        Returns relevant analytics based on user role.
-        """
         user = request.user
-        role = getattr(user, "role", None)  # Ensure role exists
+        role = getattr(user, "role", None)
 
         if not role:
             return Response({"error": "User role not found"}, status=400)
@@ -398,78 +462,267 @@ class DashboardView(APIView):
         response_data = {"role": role}
 
         if role == "doctor":
-            total_patients = CustomUser.objects.filter(role="patient").distinct().count()
+
+            today = timezone.now().date()
+
+            patients = CustomUser.objects.filter(
+                role="patient",
+                assigned_diets__doctor=user
+            ).distinct()
+
+            total_mothers = patients.count()
+
+            high_risk = HealthStatus.objects.filter(
+                patient__in=patients,
+                health_status__in=["Poor", "Critical"]
+            ).values("patient").distinct().count()
+
+            due_soon = Profile.objects.filter(
+                user__in=patients,
+                lmp_date__isnull=False,
+                lmp_date__lte=date.today() - timedelta(days=240)
+            ).count()
+
+            trimester = {"t1": 0, "t2": 0, "t3": 0}
+
+            for p in Profile.objects.filter(user__in=patients):
+                month = p.pregnancy_month
+                if month:
+                    if month <= 3:
+                        trimester["t1"] += 1
+                    elif month <= 6:
+                        trimester["t2"] += 1
+                    else:
+                        trimester["t3"] += 1
+
+            diet_qs = DietPlanStatus.objects.filter(
+                patient__in=patients,
+                date=today,
+                status="skipped"
+            )
+
+            diet_missed_patients = diet_qs.values("patient").distinct().count()
+            diet_missed_total = diet_qs.count()
+
+            exercise_qs = ExerciseStatus.objects.filter(
+                user__in=patients,
+                status="skipped",
+                updated_at__date=today
+            )
+
+            exercise_missed_patients = exercise_qs.values("user").distinct().count()
+            exercise_missed_total = exercise_qs.count()
+
             total_diet_plans = DietPlan.objects.filter(doctor=user).count()
-            active_patients = CustomUser.objects.filter(
-                role="patient", assigned_diets__doctor=user, 
-            ).distinct().count()
+            
+            diet_completed_today = DietPlanStatus.objects.filter(
+                patient__in=patients,
+                date=today,
+                status="completed"
+            ).count()
 
-            patient_engagement_rate = (
-                round((active_patients / total_patients) * 100, 2) if total_patients else 0
-            )
+            alerts = []
 
-            total_diet_plans_count = DietPlan.objects.filter(doctor=user).count()
-            diet_effectiveness = (
-                round(
-                    HealthStatus.objects.filter(patient__role="patient", health_status="Improving").count() /
-                    total_diet_plans_count * 100, 2
-                ) if total_diet_plans_count else 0
-            )
+            critical_cases = HealthStatus.objects.filter(
+                patient__in=patients,
+                health_status="Critical"
+            ).select_related("patient")
 
-            total_exercises = Exercise.objects.filter().count()
-            completed_exercises = ExerciseDate.objects.filter(patient__in=CustomUser.objects.filter(role="patient")).count()
+            for c in critical_cases[:10]:
+                alerts.append({
+                    "name": c.patient.get_full_name(),
+                    "message": "Critical health condition",
+                    "type": "critical"
+                })
 
-            exercise_compliance = (
-                round((completed_exercises / total_exercises) * 100, 2) if total_exercises else 0
-            )
+            profiles = Profile.objects.filter(user__in=patients).select_related("user")
+            health_map = {
+                h.patient_id: h
+                for h in HealthStatus.objects.filter(patient__in=patients)
+            }
+
+            recent_mothers = []
+
+            for p in profiles[:10]:
+                user_obj = p.user
+                health = health_map.get(user_obj.id)
+
+                recent_mothers.append({
+                    "id": user_obj.id,
+                    "name": user_obj.get_full_name() or user_obj.first_name,
+                    "gestational_age": p.gestational_age or "NA",
+                    "bp": getattr(health, "blood_pressure", "NA"),
+                    "sugar": getattr(health, "blood_sugar", "NA"),
+                    "edd": p.edd or "NA",
+                    "bmi": p.bmi or "NA",
+                    "health_status": getattr(health, "health_status", "Stable")
+                })
 
             response_data.update({
-                "total_patients": total_patients,
+                "active_mothers": total_mothers,
+                "high_risk_cases": high_risk,
+                "due_in_30_days": due_soon,
                 "total_diet_plans": total_diet_plans,
-                "patient_engagement_rate": patient_engagement_rate,
-                "diet_effectiveness": diet_effectiveness,
-                "exercise_compliance_rate": exercise_compliance,
+
+                "trimester_overview": trimester,
+
+                "diet_missed_today": diet_missed_patients,
+                "diet_missed_total": diet_missed_total,
+                "diet_completed_today": diet_completed_today,
+
+                "exercise_missed_today": exercise_missed_patients,
+                "exercise_missed_total": exercise_missed_total,
+
+                "alerts": alerts,
+
+                "recent_mothers": recent_mothers,
             })
 
         elif role == "patient":
-            total_diets = DietPlan.objects.filter(patient=user).count()
-            total_exercises = Exercise.objects.filter(user=user).count()
-            latest_health_status = HealthStatus.objects.filter(patient=user).order_by("-created_at").first()
-            avg_calories_burned = Exercise.objects.filter(user=user).aggregate(Avg("calories_burned"))["calories_burned__avg"] or 0
 
-            completed_exercises = Exercise.objects.filter(user=user).count()
-            goal_achievement_rate = (
-                round((completed_exercises / total_exercises) * 100, 2) if total_exercises else 0
+            today = timezone.now().date()
+
+            total_diets = DietPlan.objects.filter(patient=user).count()
+            total_exercises = ExerciseDate.objects.filter(patient=user).count()
+
+            latest_health_status = HealthStatus.objects.filter(
+                patient=user
+            ).order_by("-created_at").first()
+
+            avg_calories_burned = (
+                ExerciseStatus.objects
+                .filter(user=user, status="completed")
+                .aggregate(avg=Avg("calories_burned"))
+                .get("avg") or 0
             )
+
+            completed_exercises = ExerciseStatus.objects.filter(user=user).count()
+
+            goal_achievement_rate = (
+                round((completed_exercises / total_exercises) * 100, 2)
+                if total_exercises else 0
+            )
+
+            profile = getattr(user, "profile", None)
+            pregnancy_details = {}
+            if profile:
+                pregnancy_details = {
+                    "gestational_age": profile.gestational_age,
+                    "edd": profile.edd,
+                    "pregnancy_month": profile.pregnancy_month,
+                    "bmi": profile.bmi,
+                    "bmi_category": profile.bmi_category,
+                }
+
+            today_diet_status = DietPlanStatus.objects.filter(
+                patient=user,
+                date=today
+            ).values("status").annotate(count=Count("id"))
+            
+            today_meals = {item["status"]: item["count"] for item in today_diet_status}
+
+            today_exercise_status = ExerciseStatus.objects.filter(
+                user=user,
+                updated_at__date=today
+            ).values("status").annotate(count=Count("id"))
+            
+            today_exercises = {item["status"]: item["count"] for item in today_exercise_status}
+
+            today_steps = DailyStepCount.objects.filter(
+                patient=user,
+                date=today
+            ).first()
+
+            upcoming_diet_plans = DietPlanDate.objects.filter(
+                diet_plan__patient=user,
+                date__gte=today
+            ).order_by("date")[:5]
 
             response_data.update({
                 "total_diets": total_diets,
                 "total_exercises": total_exercises,
-                "latest_health_status": latest_health_status.health_status if latest_health_status else "No status available",
+                "latest_health_status": latest_health_status.health_status if latest_health_status else "No status",
                 "average_calories_burned_per_week": avg_calories_burned,
                 "goal_achievement_rate": goal_achievement_rate,
+                "pregnancy_details": pregnancy_details,
+                "today_meals": today_meals,
+                "today_exercises": today_exercises,
+                "today_steps": {
+                    "steps": today_steps.steps if today_steps else 0,
+                    "goal": today_steps.goal_steps if today_steps else 0,
+                    "status": today_steps.status if today_steps else "low",
+                } if today_steps else {"steps": 0, "goal": 0, "status": "low"},
+                "upcoming_diet_dates": [d.date for d in upcoming_diet_plans],
             })
 
-        elif role == "admin":
+        elif role in ["admin", "superadmin"]:
+
+            today = timezone.now().date()
+            this_month_start = today.replace(day=1)
+
             total_patients = CustomUser.objects.filter(role="patient").count()
             total_doctors = CustomUser.objects.filter(role="doctor").count()
             total_diet_plans = DietPlan.objects.count()
             total_exercises = Exercise.objects.count()
-            monthly_growth = CustomUser.objects.filter(date_joined__month=2).count()
+            total_admins = CustomUser.objects.filter(role="admin").count()
 
-            top_doctors = (
-                CustomUser.objects.filter(role="doctor")
-                .annotate(
-                    diet_count=Count("created_diets"),
-                    exercise_count=Count("created_exercise_set")
+            new_patients_this_month = CustomUser.objects.filter(
+                role="patient",
+                date_joined__gte=this_month_start
+            ).count()
+            new_doctors_this_month = CustomUser.objects.filter(
+                role="doctor",
+                date_joined__gte=this_month_start
+            ).count()
+
+            diet_missed_today = DietPlanStatus.objects.filter(
+                date=today,
+                status="skipped"
+            ).count()
+            diet_completed_today = DietPlanStatus.objects.filter(
+                date=today,
+                status="completed"
+            ).count()
+            
+            exercise_missed_today = ExerciseStatus.objects.filter(
+                status="skipped",
+                updated_at__date=today
+            ).count()
+            exercise_completed_today = ExerciseStatus.objects.filter(
+                status="completed",
+                updated_at__date=today
+            ).count()
+
+            critical_cases = HealthStatus.objects.filter(
+                health_status="Critical"
+            ).select_related("patient").count()
+
+            diet_completion_rate = 0
+            total_diet_statuses_today = DietPlanStatus.objects.filter(date=today).count()
+            if total_diet_statuses_today > 0:
+                diet_completion_rate = round(
+                    (diet_completed_today / total_diet_statuses_today) * 100, 2
                 )
-                .order_by("-diet_count", "-exercise_count")[:5]
+
+            doctor_patient_counts = (
+                CustomUser.objects.filter(role="doctor")
+                .annotate(patient_count=Count("created_diets__patient", distinct=True))
+                .values("id", "username")
+                .annotate(
+                    first_name=F("profile__first_name"),
+                    last_name=F("profile__last_name")
+                )
+                .order_by("-patient_count")[:10]
             )
 
-            most_popular_diet = (
-                DietPlan.objects.annotate(patient_count=Count("patient"))
-                .order_by("-patient_count")
-                .first()
+            recent_patients = (
+                CustomUser.objects.filter(role="patient")
+                .select_related("profile")
+                .order_by("-date_joined")[:5]
+                .values(
+                    "id", "date_joined",
+                    "profile__first_name", "profile__last_name"
+                )
             )
 
             response_data.update({
@@ -477,12 +730,224 @@ class DashboardView(APIView):
                 "total_doctors": total_doctors,
                 "total_diet_plans": total_diet_plans,
                 "total_exercises": total_exercises,
-                "monthly_growth": monthly_growth,
-                "top_doctors": [doctor.username for doctor in top_doctors],
-                "most_popular_diet": most_popular_diet.title if most_popular_diet else None,
+                "total_admins": total_admins,
+                "new_patients_this_month": new_patients_this_month,
+                "new_doctors_this_month": new_doctors_this_month,
+                "diet_missed_today": diet_missed_today,
+                "diet_completed_today": diet_completed_today,
+                "exercise_missed_today": exercise_missed_today,
+                "exercise_completed_today": exercise_completed_today,
+                "critical_cases": critical_cases,
+                "diet_completion_rate": diet_completion_rate,
+                "top_doctors": list(doctor_patient_counts),
+                "recent_patients": list(recent_patients),
             })
 
         else:
             return Response({"error": "Invalid role"}, status=403)
 
         return Response(response_data)
+
+class SyncStepsView(APIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = StepSyncSerializer
+
+    def post(self, request):
+        serializer = StepSyncSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        patient = request.user
+        profile = patient.profile
+
+        steps = serializer.validated_data["steps"]
+        date = serializer.validated_data["date"]
+        source = serializer.validated_data["source"]
+
+        trimester = get_trimester(profile)
+        diabetes = has_diabetes(patient)
+
+        goal = calculate_step_goal(trimester, diabetes)
+        status = classify_steps(steps, goal)
+
+        obj, _ = DailyStepCount.objects.update_or_create(
+            patient=patient,
+            date=date,
+            defaults={
+                "steps": steps,
+                "goal_steps": goal,
+                "source": source,
+                "status": status,
+            }
+        )
+
+        exercise_done = exercise_completed_today(patient)
+
+        return Response({
+            "date": date,
+            "steps": steps,
+            "goal": goal,
+            "status": status,
+            "message": daily_activity_message(status, exercise_done),
+        })
+
+
+class TodayStepsView(APIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = DailyStepSerializer
+
+    def get(self, request):
+        today = timezone.now().date()
+        try:
+            obj = DailyStepCount.objects.get(
+                patient=request.user,
+                date=today
+            )
+            data = DailyStepSerializer(obj).data
+            data["message"] = daily_activity_message(
+                obj.status,
+                exercise_completed_today(request.user)
+            )
+            return Response(data)
+        except DailyStepCount.DoesNotExist:
+            return Response({
+                "date": today,
+                "steps": 0,
+                "goal_steps": 0,
+                "status": "low",
+                "message": "No activity recorded yet today."
+            })
+
+
+class WeeklyStepsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = DailyStepCount.objects.filter(
+            patient=request.user
+        ).order_by("-date")[:7]
+
+        return Response([
+            {"date": s.date, "steps": s.steps}
+            for s in reversed(qs)
+        ])
+
+
+
+class AppContentView(APIView):
+    serializer_class = AppContentSerializer
+    def get(self, request):
+        content_type = request.GET.get("type")
+        qs = AppContent.objects.filter(is_active=True)
+        if content_type:
+            qs = qs.filter(content_type=content_type)
+        serializer = AppContentSerializer(qs, many=True)
+        return Response(serializer.data)
+
+class AcceptLegalView(APIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = LegalConsentSerializer
+
+    def post(self, request):
+        serializer = LegalConsentSerializer(
+            data=request.data,
+            context={"request": request}
+        )
+
+        serializer.is_valid(raise_exception=True)
+
+        UserLegalConsent.objects.create(
+            user=request.user,
+            **serializer.validated_data
+        )
+
+        return Response(
+            {"message": "Legal consent accepted successfully"},
+            status=status.HTTP_201_CREATED
+        )
+
+    
+class HealthEducationView(APIView):
+    serializer_class = HealthEducationSerializer
+
+    def get(self, request):
+        data = HealthEducation.objects.filter(is_active=True).order_by("order")
+        serializer = HealthEducationSerializer(
+            data,
+            many=True,
+            context={"request": request} 
+        )
+        return Response(serializer.data)
+    
+class HelpContentView(APIView):
+    serializer_class = HelpContentSerializer
+    def get(self, request):
+        screen = request.query_params.get("screen")
+        content_type = request.query_params.get("type")
+
+        qs = HelpContent.objects.filter(is_active=True)
+        if screen:
+            qs = qs.filter(screen_name=screen)
+        if content_type:
+            qs = qs.filter(content_type=content_type)
+
+        return Response(HelpContentSerializer(qs, many=True).data)
+
+class AdminDietPlanListView(generics.ListAPIView):
+    """Admin/Superadmin can view all diet plans with doctor and patient info"""
+    serializer_class = DietPlanReadSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = DietPlanFilter
+
+    def get_queryset(self):
+        qs = DietPlan.objects.prefetch_related(
+            "meals__meal_portions",
+            "diet_dates",
+            "patient",
+            "doctor"
+        ).order_by("-id")
+        
+        doctor_id = self.request.query_params.get("doctor_id")
+        patient_id = self.request.query_params.get("patient_id")
+        date = self.request.query_params.get("date")
+        
+        if doctor_id:
+            qs = qs.filter(doctor_id=doctor_id)
+        if patient_id:
+            qs = qs.filter(patient_id=patient_id)
+        if date:
+            qs = qs.filter(diet_dates__date=date)
+        
+        return qs.distinct()
+
+class AdminDoctorDietPlansView(generics.ListAPIView):
+    """Admin/Superadmin can view diet plans assigned by a specific doctor"""
+    serializer_class = DietPlanReadSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+
+    def get_queryset(self):
+        doctor_id = self.kwargs.get('doctor_id')
+        qs = DietPlan.objects.filter(doctor_id=doctor_id).prefetch_related(
+            "meals__meal_portions",
+            "diet_dates",
+            "patient",
+            "doctor"
+        ).order_by("-id")
+        
+        patient_id = self.request.query_params.get("patient_id")
+        if patient_id:
+            qs = qs.filter(patient_id=patient_id)
+        
+        return qs.distinct()
+
+class AdminDoctorPatientsView(generics.ListAPIView):
+    """Admin/Superadmin can view all patients assigned to a specific doctor"""
+    serializer_class = CustomUserDetailsSerializer
+    permission_classes = [IsAdminOrSuperAdmin]
+
+    def get_queryset(self):
+        doctor_id = self.kwargs.get('doctor_id')
+        return CustomUser.objects.filter(
+            role='patient',
+            assigned_diets__doctor_id=doctor_id
+        ).distinct().order_by("-id")

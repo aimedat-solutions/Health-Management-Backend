@@ -2,19 +2,21 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
-from users.models import CustomUser, DietPlan, MealPortion, Exercise, LabReport, PatientResponse, HealthStatus, DietPlanDate,ExerciseDate
+from users.models import CustomUser, DietPlan, MealPortion, Exercise, LabReport, PatientResponse, PatientDietQuestion, PatientExerciseLog, DietPlanDate,ExerciseDate
 from django.shortcuts import get_object_or_404
-from .serializers import PatientSerializer, DietPlanCreateSerializer, MealPortionSerializer,DietPlanReadSerializer,DietPlanMealSerializer,ExcerciseDateAssignSerializer,DoctorExerciseResponseSerializer
+from users.nutrition_service import fetch_nutrition_data
+from .serializers import PatientSerializer, DietPlanCreateSerializer, MealPortionSerializer,DietPlanReadSerializer,PatientDietQuestionSerializer,PatientExerciseLogSerializer,ExcerciseDateAssignSerializer,DoctorExerciseResponseSerializer
 from users.serializers import ExerciseDateSerializer
 from patient.serializers import LabReportSerializer, PatientResponseSerializer
-from users.permissions import PermissionsManager,IsDoctorUser, IsSuperAdmin, IsAdmin
+from users.permissions import PermissionsManager,IsDoctorUser, IsSuperAdmin, IsAdmin, IsDoctorOrAdmin
 from rest_framework import viewsets, filters, generics
 from django_filters.rest_framework import DjangoFilterBackend
 from users.filters import CustomUserFilter
 from users.pagination import Pagination
-from django.db.models.functions import ExtractYear
+from django.db.models.functions import ExtractMonth, ExtractYear, Now
 from django.db.models import IntegerField, F, ExpressionWrapper
 from django.utils.timezone import now
+from datetime import date
 class PatientManagementViewSet(viewsets.ModelViewSet):
     """
     Allows doctors to view and edit patient details.
@@ -26,16 +28,32 @@ class PatientManagementViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = CustomUserFilter
     search_fields = ['profile__first_name', 'profile__last_name', 'email', 'phone_number']
-    ordering_fields = ['profile__first_name', 'age', 'profile__month', 'date_joined']
-    ordering = ['profile__first_name', 'age', 'profile__month', ] 
+    ordering_fields = ['profile__first_name', 'age', 'birth_month', 'date_joined']
+    ordering = ['profile__first_name', 'age', 'birth_month', ] 
     codename = 'patientmanagement'
     
     def get_queryset(self):
+        today = date.today()
         return (
             CustomUser.objects.filter(role='patient')
             .annotate(
+                # Age
                 age=ExpressionWrapper(
-                    ExtractYear(now()) - ExtractYear(F('profile__date_of_birth')),
+                    ExtractYear(Now()) - ExtractYear(F('profile__date_of_birth')),
+                    output_field=IntegerField()
+                ),
+                # Birth month
+                birth_month=ExtractMonth(F('profile__date_of_birth')),
+
+                # Pregnancy month (approx, based on 28-day cycle)
+                pregnancy_month=ExpressionWrapper(
+                    ((Now() - F('profile__lmp_date')) / 28) + 1,
+                    output_field=IntegerField()
+                ),
+
+                # Gestational age in weeks (integer)
+                gestational_weeks=ExpressionWrapper(
+                    (Now() - F('profile__lmp_date')) / 7,
                     output_field=IntegerField()
                 )
             )
@@ -51,7 +69,7 @@ class PatientManagementViewSet(viewsets.ModelViewSet):
         data = {
             "patient_details": PatientSerializer(patient).data,
             "assigned_exercises": ExerciseDateSerializer(assigned_exercises, many=True).data,
-            "assigned_diet_plans": DietPlanReadSerializer(diet_plans, many=True).data,
+            "assigned_diet_plans": DietPlanReadSerializer(diet_plans, many=True, context={'request': request}).data,
             "lab_reports": LabReportSerializer(lab_reports, many=True).data,
             "questions": PatientResponseSerializer(questions, many=True).data
         }
@@ -61,66 +79,109 @@ class PatientManagementViewSet(viewsets.ModelViewSet):
 class MealPortionViewSet(viewsets.ModelViewSet):
     queryset = MealPortion.objects.all()
     serializer_class = MealPortionSerializer
-    permission_classes = [IsAuthenticated, IsSuperAdmin, IsAdmin]
+    permission_classes = [IsDoctorOrAdmin]
     filter_backends = [filters.SearchFilter]
     search_fields = ["name"]
 
+    def _enrich_with_nutrition(self, instance):
+        print(f"--- AI Nutrition: fetching data for '{instance.name}' ---")
+        data = fetch_nutrition_data(instance.name)
+        print(data)
+        if data:
+            for field, value in data.items():
+                setattr(instance, field, value)
+            instance.save(update_fields=list(data.keys()))
+            print(f"--- AI Nutrition: saved data for '{instance.name}' (calories={data.get('calories')}) ---")
+        else:
+            print(f"--- AI Nutrition: no data found for '{instance.name}' ---")
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        self._enrich_with_nutrition(instance)
+
+    def perform_update(self, serializer):
+        name_changed = (
+            self.get_object().name != serializer.validated_data.get("name")
+        )
+        instance = serializer.save()
+        if name_changed:
+            self._enrich_with_nutrition(instance)
+
 class DietPlanViewSet(viewsets.ModelViewSet):
     """
-    Allows doctors to create and retrieve diet plans for patients.
-    
-    example :
-    
-            {
-              "patient": 1,
-              "diet": {        
-                        "breakfast":  {
-                        "meal_portions": [1, 2]
-                        },
-                        "lunch":  {  
-                        "meal_portions": [3, 4]
-                        }   
-                        },
-              "dates": ["2025-03-21", "2025-03-22"]
-            }    
+    Allows doctors and admins to create and retrieve diet plans for patients.
     """
     queryset = DietPlan.objects.none()
     permission_classes = [PermissionsManager]
     serializer_class = DietPlanCreateSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = ["patient__username", "diet_dates"]
-    codename = 'dietplan'
+    codename = "dietplan"
 
     def get_queryset(self):
-        qs = DietPlan.objects.filter(doctor=self.request.user).prefetch_related(
+
+        user = self.request.user
+
+        qs = DietPlan.objects.prefetch_related(
             "meals__meal_portions",
             "diet_dates",
             "patient"
         )
+
+        # ==========================
+        # ADMIN ACCESS
+        # ==========================
+        if user.role in ["admin", "superadmin"]:
+            pass
+
+        # ==========================
+        # DOCTOR ACCESS
+        # ==========================
+        else:
+            qs = qs.filter(doctor=user)
+
+        # ==========================
+        # FILTER BY PATIENT
+        # ==========================
         patient_id = self.request.query_params.get("patient_id")
+
         if patient_id:
             qs = qs.filter(patient__id=patient_id)
-        return qs
+
+        return qs.order_by("-id")
 
     def get_serializer_class(self):
-        if self.action in ['list', 'retrieve']:
+
+        if self.action in ["list", "retrieve"]:
             return DietPlanReadSerializer
+
         return DietPlanCreateSerializer
 
     def perform_create(self, serializer):
-        serializer.save(doctor=self.request.user)
-    
+
+        serializer.save(
+            doctor=self.request.user
+        )
+
     def get_serializer_context(self):
+
         context = super().get_serializer_context()
-        target_date = self.request.query_params.get('date')
+
+        target_date = self.request.query_params.get("date")
+
         if target_date:
             from datetime import datetime
+
             try:
-                context["target_date"] = datetime.strptime(target_date, "%Y-%m-%d").date()
+                context["target_date"] = datetime.strptime(
+                    target_date,
+                    "%Y-%m-%d"
+                ).date()
+
             except ValueError:
                 pass
-        return context
 
+        return context
 class ReviewHealthStatusView(APIView):
     """
     Allows doctors to review the health status of patients.
@@ -178,21 +239,64 @@ class DoctorAssignExerciseView(APIView):
             Allows doctors to view assigned exercises.
             """
             doctor = request.user
-            exercises = ExerciseDate.objects.filter(doctor=doctor)
+            exercises = ExerciseDate.objects.filter(doctor=doctor).select_related(
+                "exercise", "patient__profile", "doctor__profile"
+            )
 
             data = [
                 {
-                    "exercise_id": ex.exercise.id,
-                    "exercise_name": ex.exercise.title,
-                    "patient_name": ex.patient.profile.first_name + " " + ex.patient.profile.last_name,
-                    "assigned_by": ex.doctor.profile.first_name + " " + ex.doctor.profile.last_name,
-                    "status": ex.status_entries.first().status if ex.status_entries.exists() else "pending",
+                    "exercise_id": ex.exercise.id if ex.exercise else None,
+                    "exercise_name": ex.exercise.title if ex.exercise else "Exercise",
+
+                    "patient_id": ex.patient.id if ex.patient else None,
+                    "patient_name": (
+                        f"{getattr(ex.patient.profile, 'first_name', '') or ''} "
+                        f"{getattr(ex.patient.profile, 'last_name', '') or ''}"
+                    ).strip() or "Patient",
+
+                    "assigned_by": (
+                        f"{getattr(ex.doctor.profile, 'first_name', '') or ''} "
+                        f"{getattr(ex.doctor.profile, 'last_name', '') or ''}"
+                    ).strip() or "Doctor",
+
+                    "status": (
+                        ex.status_entries.first().status
+                        if ex.status_entries.exists()
+                        else "pending"
+                    ),
+
                     "date": ex.date
                 }
                 for ex in exercises
             ]
+
             return Response(data, status=200)
         
 class DoctorExerciseReviewView(generics.CreateAPIView):
     serializer_class = DoctorExerciseResponseSerializer
     permission_classes = [IsAuthenticated]
+    
+
+
+class DoctorDietLogsView(APIView):
+    permission_classes = [PermissionsManager, IsDoctorUser]
+
+    def get(self, request):
+        queryset = PatientDietQuestion.objects.all().order_by("-date")
+        patient_id = request.query_params.get("patient_id")
+        if patient_id:
+            queryset = queryset.filter(patient_id=patient_id)
+        serializer = PatientDietQuestionSerializer(queryset, many=True, context={"request": request})
+        return Response(serializer.data)
+
+
+class DoctorExerciseLogsView(APIView):
+    permission_classes = [PermissionsManager, IsDoctorUser]
+
+    def get(self, request):
+        queryset = PatientExerciseLog.objects.all().order_by("-date")
+        patient_id = request.query_params.get("patient_id")
+        if patient_id:
+            queryset = queryset.filter(patient_id=patient_id)
+        serializer = PatientExerciseLogSerializer(queryset, many=True, context={"request": request})
+        return Response(serializer.data)

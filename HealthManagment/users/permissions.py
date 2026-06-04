@@ -42,6 +42,18 @@ class IsAdmin(permissions.BasePermission):
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.role == "admin"
 
+class IsAdminOrSuperAdmin(permissions.BasePermission):
+    """Allows access to admin and superadmin users. Superadmin has full access, admin can read/add/edit but not delete."""
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        is_admin = request.user.role == "admin"
+        is_superadmin = request.user.role == "superadmin"
+        
+        if request.method == 'DELETE':
+            return is_superadmin
+        return is_admin or is_superadmin
+
 class IsDoctorUser(permissions.BasePermission):
     """
     Custom permission to allow only users in the 'doctor' group.
@@ -49,6 +61,16 @@ class IsDoctorUser(permissions.BasePermission):
 
     def has_permission(self, request, view):
         return request.user and request.user.is_authenticated and request.user.groups.filter(name='doctor').exists() 
+    
+class IsDoctorOrAdmin(permissions.BasePermission):
+    """Allows access to doctors, admins, and superadmins."""
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        return (
+            request.user.role in ["admin", "superadmin"] or
+            request.user.groups.filter(name='doctor').exists()
+        ) 
     
 class IsPatientUser(permissions.BasePermission):
     """

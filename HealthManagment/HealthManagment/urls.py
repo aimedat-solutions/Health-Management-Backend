@@ -22,7 +22,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from users.views import ( 
  SendOrResendSMSAPIView,
  ProfileAPIView,  
- CustomLoginView,UserRegistrationAPIView,LogoutAPIView,
+ CustomLoginView,UserRegistrationAPIView,LogoutAPIView,DashboardView,
 )
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -35,8 +35,11 @@ urlpatterns = [
     path('logout/', LogoutAPIView.as_view(), name='logout'),
     path('admin-panel/', include('users.urls')),
     path('profile/', ProfileAPIView.as_view(), name='profile-api'),
+    path('dashboard/', DashboardView.as_view(), name='dashboard'),
     path('doctor/', include('doctor.urls')),
     path('patient/', include('patient.urls')), 
+    
+    path("notifications/", include("notification.urls")),
 ]
 
 if settings.DEBUG:

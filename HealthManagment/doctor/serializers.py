@@ -1,62 +1,59 @@
 from rest_framework import serializers
-from users.models import CustomUser, DietPlan, MealPortion, DietPlanDate, DietPlanMeal, DietPlanStatus, HealthStatus,ExerciseDate,DoctorExerciseResponse
+from users.models import CustomUser, Profile, DietPlan, MealPortion, DietPlanDate, DietPlanMeal, DietPlanStatus, HealthStatus,ExerciseDate,DoctorExerciseResponse,PatientDietQuestion,PatientExerciseLog
 from django.utils import timezone
 class HealthStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = HealthStatus
         fields =  "__all__"
-
-class PatientSerializer(serializers.ModelSerializer):
-    profileImage = serializers.SerializerMethodField()
-    height = serializers.SerializerMethodField()
-    weight = serializers.SerializerMethodField()
-    month = serializers.SerializerMethodField()
-    name = serializers.SerializerMethodField()
-    age = serializers.SerializerMethodField()
-    healthData = serializers.SerializerMethodField()
+        
+class ProfileSerializer(serializers.ModelSerializer):
+    age = serializers.ReadOnlyField()
+    pregnancy_month = serializers.ReadOnlyField()
+    gestational_age = serializers.ReadOnlyField()
+    edd = serializers.ReadOnlyField()
 
     class Meta:
+        model = Profile
+        fields = [
+            "first_name", "last_name", "date_of_birth", "age",
+            "gender", "occupation", "address", "specialization",
+            "profile_image", "height", "weight", "lmp_date",
+            "pregnancy_month", "gestational_age", "edd",
+        ]
+class PatientSerializer(serializers.ModelSerializer):
+    profile = ProfileSerializer(read_only=True)
+    healthData = serializers.SerializerMethodField()
+    class Meta:
         model = CustomUser
-        fields = ["id", "profileImage", "name", "month", "age", "height","weight", "healthData"]
-
-    def get_profileImage(self, obj):
-        request = self.context.get('request')
-        if obj.profile.profile_image and request:
-            return request.build_absolute_uri(obj.profile.profile_image.url)
-        return None
-    
-    def get_height(self, obj):
-        return obj.profile.height if obj.profile.height else None
-    
-    def get_month(self, obj):
-        return obj.profile.month if obj.profile.month else None
-    
-    def get_weight(self, obj):
-        return obj.profile.weight if obj.profile.weight else None
-    
-    def get_name(self, obj):
-        return f"{obj.profile.first_name} {obj.profile.last_name}".strip()
-
-    def get_age(self, obj):
-        return obj.profile.age
+        fields = [
+            "id", "role", "username", "phone_number", "email", "is_verified","is_first_login", "initial_question_completed", "ask_diet_question", 
+            "last_diet_question_answered","last_question_answered_at",
+            "profile", "healthData",
+        ]
 
     def get_healthData(self, obj):
         health_status = HealthStatus.objects.filter(patient=obj).first()
         return HealthStatusSerializer(health_status).data if health_status else {}
 
-
 class MealPortionSerializer(serializers.ModelSerializer):
     class Meta:
         model = MealPortion
         fields = "__all__"
+        read_only_fields = [
+            "calories", "protein", "carbohydrates", "fat",
+            "fiber", "sugar", "saturated_fat", "trans_fat",
+            "cholesterol", "sodium", "serving_unit", "serving_qty",
+            "ai_generated",
+        ]
 
 class DietPlanMealSerializer(serializers.ModelSerializer):
     portions = MealPortionSerializer(source="meal_portions", many=True)
     time_range = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
+    statuses_by_date = serializers.SerializerMethodField()
     class Meta:
         model = DietPlanMeal
-        fields = ["id", "meal_type", "time_range", "portions", "status"]
+        fields = ["id", "meal_type", "time_range", "portions", "status", "statuses_by_date"]
 
     def get_time_range(self, obj):
         if obj.start_time and obj.end_time:
@@ -80,14 +77,35 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
         ).first()
 
         return status_obj.status if status_obj else "pending"
+
+    def get_statuses_by_date(self, obj):
+        statuses = DietPlanStatus.objects.filter(
+            patient=obj.diet_plan.patient,
+            diet_plan=obj
+        ).order_by("date")
+
+        return [
+            {
+                "date": s.date,
+                "status": s.status,
+                "reason_audio": s.reason_audio.url if s.reason_audio else None,
+            }
+            for s in statuses
+        ]
     
 class DietPlanDateSerializer(serializers.ModelSerializer):
     class Meta:
         model = DietPlanDate
         fields = "__all__"
-
+class DietPlanMealValueSerializer(serializers.Serializer):
+    meal_portions = serializers.ListField(
+        child=serializers.IntegerField(),  # IDs of MealPortion
+        allow_empty=True
+    )
+    start_time = serializers.TimeField(required=False, allow_null=True)
+    end_time = serializers.TimeField(required=False, allow_null=True)
 class DietPlanCreateSerializer(serializers.ModelSerializer):
-    diet = serializers.DictField(write_only=True)
+    diet = serializers.DictField(child=DietPlanMealValueSerializer(), write_only=True)
     dates = serializers.ListField(child=serializers.DateField(), write_only=True)
 
     class Meta:
@@ -117,9 +135,10 @@ class DietPlanCreateSerializer(serializers.ModelSerializer):
             DietPlanDate.objects.create(diet_plan=diet_plan, date=date)
             
         patient = diet_plan.patient
-        if hasattr(patient, "verified"):  
+        if hasattr(patient, "verified"):
+            patient.is_verified = True
             patient.verified = True
-            patient.save(update_fields=["verified"])
+            patient.save(update_fields=["verified", "is_verified"])
 
         return diet_plan
 
@@ -128,10 +147,18 @@ class DietPlanReadSerializer(serializers.ModelSerializer):
     meals = DietPlanMealSerializer(many=True, read_only=True)
     dates = serializers.SerializerMethodField()
     patient_name = serializers.CharField(source="patient.profile.first_name", read_only=True)
+    doctor_id = serializers.IntegerField(source="doctor.id", read_only=True)
+    doctor_name = serializers.SerializerMethodField()
 
     class Meta:
         model = DietPlan
-        fields = ["id", "patient", "patient_name", "dates", "meals"]
+        fields = ["id", "patient", "patient_name", "doctor_id", "doctor_name", "dates", "meals"]
+
+    def get_doctor_name(self, obj):
+        profile = getattr(obj.doctor, "profile", None)
+        first_name = getattr(profile, "first_name", "") or ""
+        last_name = getattr(profile, "last_name", "") or ""
+        return f"{first_name} {last_name}".strip() or "Doctor"
 
     def get_dates(self, obj):
         return [date.date for date in obj.diet_dates.all()]
@@ -146,3 +173,53 @@ class DoctorExerciseResponseSerializer(serializers.ModelSerializer):
     class Meta:
         model = DoctorExerciseResponse
         fields = '__all__'
+           
+class PatientDietQuestionSerializer(serializers.ModelSerializer):
+    breakfast_audio = serializers.SerializerMethodField()
+    lunch_audio = serializers.SerializerMethodField()
+    eveningSnack_audio = serializers.SerializerMethodField()
+    dinner_audio = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PatientDietQuestion
+        fields = "__all__"
+
+    def get_full_url(self, obj, field):
+        request = self.context.get("request")
+        file = getattr(obj, field)
+        if file:
+            return request.build_absolute_uri(file.url)
+        return None
+
+    def get_breakfast_audio(self, obj):
+        return self.get_full_url(obj, "breakfast_audio")
+
+    def get_lunch_audio(self, obj):
+        return self.get_full_url(obj, "lunch_audio")
+
+    def get_eveningSnack_audio(self, obj):
+        return self.get_full_url(obj, "eveningSnack_audio")
+
+    def get_dinner_audio(self, obj):
+        return self.get_full_url(obj, "dinner_audio")
+
+class PatientExerciseLogSerializer(serializers.ModelSerializer):
+    morning_audio = serializers.SerializerMethodField()
+    evening_audio = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PatientExerciseLog
+        fields = "__all__"
+
+    def get_full_url(self, obj, field):
+        request = self.context.get("request")
+        file = getattr(obj, field)
+        if file:
+            return request.build_absolute_uri(file.url)
+        return None
+
+    def get_morning_audio(self, obj):
+        return self.get_full_url(obj, "morning_audio")
+
+    def get_evening_audio(self, obj):
+        return self.get_full_url(obj, "evening_audio")

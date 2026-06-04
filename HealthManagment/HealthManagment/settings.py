@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'users',
     'doctor',
     'patient',
+    'notification',
 ]
 
 MIDDLEWARE = [
@@ -127,8 +128,9 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
     'BLACKLIST_AFTER_ROTATION': True,
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': False,
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=config('ACCESS_TOKEN_LIFETIME_DAYS', default=15, cast=int)),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=config('REFRESH_TOKEN_LIFETIME_DAYS', default=365, cast=int)),
 }
 
 # Internationalization
@@ -165,5 +167,12 @@ MSG91_COUNTRY_CODE = config('MSG91_COUNTRY_CODE')
 
 DECRYPT_KEY = config('DECRYPT_KEY')
 
+
 DIET_QUESTION_ADD_DAYS = config('DIET_QUESTION_ADD_DAYS')
 QUESTIONS_DAYS = config('QUESTIONS_DAYS')
+
+
+PHONENUMBER_DEFAULT_REGION = 'IN'
+
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = ["http://localhost:3000"]

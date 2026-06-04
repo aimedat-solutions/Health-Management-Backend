@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from users.models import ExerciseDate, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, DietPlanStatus, ExerciseStatus,DietPlanMeal,DietPlanDate
+from users.models import ExerciseDate, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, PatientExerciseLog, DietPlanStatus, ExerciseStatus,DietPlanMeal,DietPlanDate,DietPlanCompletedPortion,ExtraMeal
 from users.serializers import OptionSerializer
 from django.utils import timezone
 from datetime import date
@@ -35,12 +35,13 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
     portions = serializers.SerializerMethodField()
     time_range = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
+    others = serializers.SerializerMethodField()
     class Meta:
         model = DietPlanMeal
-        fields = ['id','meal_type', 'time_range', 'portions', 'status']
+        fields = ['id','meal_type', 'time_range', 'portions', 'status', 'others']
 
     def get_portions(self, obj):
-        return [p.name for p in obj.meal_portions.all()]
+        return [{"id": p.id, "name": p.name} for p in obj.meal_portions.all()]
     
     def get_time_range(self, obj):
         if obj.start_time and obj.end_time:
@@ -49,6 +50,7 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
             except:
                 return f"{obj.start_time.strftime('%H:%M')} – {obj.end_time.strftime('%H:%M')}"
         return None
+    
     def get_status(self, obj):
         request = self.context.get('request')
         user = getattr(request, 'user', None)
@@ -64,6 +66,28 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
             return status_obj.status if status_obj else "pending"
 
         return "pending"
+    
+    def get_others(self, obj):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        date = self.context.get("target_date", timezone.now().date())
+
+        if user:
+            extra_items = ExtraMeal.objects.filter(
+                patient=user,
+                diet_plan_meal=obj,
+                date=date
+            )
+            return [
+                {
+                    "id": e.id,
+                    "text": e.item_name,
+                    # "quantity": e.quantity,
+                    # "notes": e.notes,
+                    "audio_entry": bool(e.audio_entry)
+                } for e in extra_items
+            ]
+        return []
     
 class DietPlanSerializer(serializers.ModelSerializer):
     meals = serializers.SerializerMethodField()
@@ -96,7 +120,24 @@ class CurrentMealSerializer(serializers.Serializer):
     status = serializers.CharField()
     diet_date = serializers.DateField()
     
+class DietPlanStatusSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DietPlanStatus
+        fields = "__all__"
 
+
+class DietPlanCompletedPortionSerializer(serializers.ModelSerializer):
+    portion_name = serializers.CharField(source="portion.name", read_only=True)
+
+    class Meta:
+        model = DietPlanCompletedPortion
+        fields = ["id", "diet_plan_meal", "portion", "portion_name", "date"]
+
+
+class ExtraMealSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExtraMeal
+        fields = "__all__"
     
 class LabReportSerializer(serializers.ModelSerializer):
     message = serializers.SerializerMethodField()
@@ -151,7 +192,6 @@ class BulkPatientResponseSerializer(serializers.Serializer):
         return data      
 class DietQuestionSerializer(serializers.ModelSerializer):
     ask_diet_question = serializers.SerializerMethodField()
-    last_diet_update = serializers.SerializerMethodField()
     date = serializers.SerializerMethodField()
     
     class Meta:
@@ -161,11 +201,6 @@ class DietQuestionSerializer(serializers.ModelSerializer):
     def get_ask_diet_question(self, obj):
         return obj.patient.ask_diet_question
     
-    def get_last_diet_update(self, obj):
-        if obj.last_diet_update:
-            return obj.last_diet_update.date().isoformat() if hasattr(obj.last_diet_update, 'date') else obj.last_diet_update
-        return None
-
     def get_date(self, obj):
         if obj.date:
             return obj.date.date().isoformat() if hasattr(obj.date, 'date') else obj.date
@@ -232,3 +267,15 @@ class AssignedExerciseSerializer(serializers.ModelSerializer):
             return status_obj.status if status_obj else "pending"
 
         return "pending"
+
+class ExerciseLogSerializer(serializers.ModelSerializer):
+    date = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PatientExerciseLog
+        fields = '__all__'
+
+    def get_date(self, obj):
+        if obj.date:
+            return obj.date.date().isoformat() if hasattr(obj.date, 'date') else obj.date
+        return None

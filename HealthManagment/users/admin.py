@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
-    CustomUser, Profile, Exercise, DoctorExerciseResponse, Question, PatientDietQuestion,
-    Option, DietPlanMeal, PatientResponse, LabReport, HealthStatus,MealPortion,DietPlan,DietPlanDate,ExerciseDate
+    CustomUser, Profile, Exercise, DoctorExerciseResponse, Question, PatientDietQuestion, PatientExerciseLog, HealthEducation,HelpContent,
+    Option, DietPlanMeal, PatientResponse, LabReport, HealthStatus,MealPortion,DietPlan,DietPlanDate,ExerciseDate,DailyStepCount,AppContent
 )
 
 admin.site.site_header = "MHealth Admin"
@@ -20,6 +20,27 @@ admin.site.register(DietPlanDate)
 admin.site.register(DietPlanMeal)
 admin.site.register(MealPortion)
 admin.site.register(PatientResponse)
+
+admin.site.register(AppContent)
+
+admin.site.register(PatientExerciseLog)
 admin.site.register(PatientDietQuestion)
 admin.site.register(LabReport)
 admin.site.register(HealthStatus)
+admin.site.register(HealthEducation)
+@admin.register(DailyStepCount)
+class DailyStepAdmin(admin.ModelAdmin):
+    list_display = ("patient", "date", "steps", "goal_steps", "status", "source")
+    list_filter = ("status", "source")
+
+@admin.register(HelpContent)
+class HelpContentAdmin(admin.ModelAdmin):
+    list_display = (
+        "content_type",
+        "screen_name",
+        "title",
+        "step_order",
+        "is_active",
+    )
+    list_filter = ("content_type", "screen_name", "is_active")
+    ordering = ("screen_name", "step_order")
