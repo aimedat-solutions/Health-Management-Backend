@@ -2,10 +2,10 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
-from users.models import CustomUser, DietPlan, MealPortion, Exercise, LabReport, PatientResponse, PatientDietQuestion, DietPlanDate,ExerciseDate
+from users.models import CustomUser, DietPlan, MealPortion, Exercise, LabReport, PatientResponse, PatientDietQuestion, PatientExerciseLog, DietPlanDate,ExerciseDate
 from django.shortcuts import get_object_or_404
 from users.nutrition_service import fetch_nutrition_data
-from .serializers import PatientSerializer, DietPlanCreateSerializer, MealPortionSerializer,DietPlanReadSerializer,PatientDietQuestionSerializer,ExcerciseDateAssignSerializer,DoctorExerciseResponseSerializer
+from .serializers import PatientSerializer, DietPlanCreateSerializer, MealPortionSerializer,DietPlanReadSerializer,PatientDietQuestionSerializer,PatientExerciseLogSerializer,ExcerciseDateAssignSerializer,DoctorExerciseResponseSerializer
 from users.serializers import ExerciseDateSerializer
 from patient.serializers import LabReportSerializer, PatientResponseSerializer
 from users.permissions import PermissionsManager,IsDoctorUser, IsSuperAdmin, IsAdmin, IsDoctorOrAdmin
@@ -287,4 +287,16 @@ class DoctorDietLogsView(APIView):
         if patient_id:
             queryset = queryset.filter(patient_id=patient_id)
         serializer = PatientDietQuestionSerializer(queryset, many=True, context={"request": request})
+        return Response(serializer.data)
+
+
+class DoctorExerciseLogsView(APIView):
+    permission_classes = [PermissionsManager, IsDoctorUser]
+
+    def get(self, request):
+        queryset = PatientExerciseLog.objects.all().order_by("-date")
+        patient_id = request.query_params.get("patient_id")
+        if patient_id:
+            queryset = queryset.filter(patient_id=patient_id)
+        serializer = PatientExerciseLogSerializer(queryset, many=True, context={"request": request})
         return Response(serializer.data)

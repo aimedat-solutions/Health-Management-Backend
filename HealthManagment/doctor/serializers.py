@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from users.models import CustomUser, Profile, DietPlan, MealPortion, DietPlanDate, DietPlanMeal, DietPlanStatus, HealthStatus,ExerciseDate,DoctorExerciseResponse,PatientDietQuestion
+from users.models import CustomUser, Profile, DietPlan, MealPortion, DietPlanDate, DietPlanMeal, DietPlanStatus, HealthStatus,ExerciseDate,DoctorExerciseResponse,PatientDietQuestion,PatientExerciseLog
 from django.utils import timezone
 class HealthStatusSerializer(serializers.ModelSerializer):
     class Meta:
@@ -202,3 +202,24 @@ class PatientDietQuestionSerializer(serializers.ModelSerializer):
 
     def get_dinner_audio(self, obj):
         return self.get_full_url(obj, "dinner_audio")
+
+class PatientExerciseLogSerializer(serializers.ModelSerializer):
+    morning_audio = serializers.SerializerMethodField()
+    evening_audio = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PatientExerciseLog
+        fields = "__all__"
+
+    def get_full_url(self, obj, field):
+        request = self.context.get("request")
+        file = getattr(obj, field)
+        if file:
+            return request.build_absolute_uri(file.url)
+        return None
+
+    def get_morning_audio(self, obj):
+        return self.get_full_url(obj, "morning_audio")
+
+    def get_evening_audio(self, obj):
+        return self.get_full_url(obj, "evening_audio")

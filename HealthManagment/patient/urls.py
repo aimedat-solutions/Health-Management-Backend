@@ -3,7 +3,7 @@ from .views import (
     LabReportViewSet,
     ViewHealthStatusView,PatientResponseViewSet,InitialQuestionsView,DietQuestionsView,DietQuestionStatusView,
     CompleteSkipDietPlanView, DietPlanView,CompleteSkipExerciseView,PatientAssignedExercisesView,QuestionFlowStatusView,
-    CurrentOrNextMealView
+    CurrentOrNextMealView, ExerciseLogView, ExerciseLogStatusView
     
 )
 from rest_framework.routers import DefaultRouter
@@ -26,4 +26,6 @@ urlpatterns = [
     path('view-health-status/', ViewHealthStatusView.as_view(), name='view-health-status'),
     path('exercises/', PatientAssignedExercisesView.as_view(), name='exercise-list'),
     path("exercise/status-update/", CompleteSkipExerciseView.as_view(), name="exercise-update-status"),
+    path("exercise-logs/", ExerciseLogView.as_view(), name="exercise-logs"),
+    path("exercise-log/status/", ExerciseLogStatusView.as_view(), name="exercise-log-status"),
 ]
