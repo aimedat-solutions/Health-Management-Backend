@@ -15,32 +15,13 @@ User = get_user_model()
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     
-    phone_number = serializers.CharField(required=False)
+    phone_number = PhoneNumberField(required=False)
 
     class Meta:
         model = CustomUser
         fields = ('role', 'phone_number')
 
-    # def validate_username(self, value):
-    #     # Ensure the username does not contain numbers
-    #     if re.search(r'\d', value):
-    #         raise serializers.ValidationError("Username should not contain numbers.")
-    #     # Check if the username already exists
-    #     if CustomUser.objects.filter(username=value).exists():
-    #         raise serializers.ValidationError("A user with this username already exists.")
-    #     return value
-
-    # def validate_email(self, value):
-    #     # Check if the email already exists
-    #     if CustomUser.objects.filter(email=value).exists():
-    #         raise serializers.ValidationError("A user with this email already exists.")
-    #     return value
-
     def validate_phone_number(self, value):
-        # Ensure the phone number is valid (e.g., contains only digits and has a valid length)
-        if not re.match(r'^\+?1?\d{9,15}$', value):
-            raise serializers.ValidationError("Enter a valid phone number. It should be between 9 and 15 digits.")
-        # Check if the phone number already exists
         if CustomUser.objects.filter(phone_number=value).exists():
             raise serializers.ValidationError("A user with this phone number already exists.")
         return value
@@ -68,7 +49,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         if phone_number:
             user.phone_number = phone_number
             user.save()
-            send_otp(phone_number)
+            send_otp(str(phone_number))
             print(send_otp)
         
         return user
@@ -76,7 +57,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 class UserLoginSerializer(serializers.Serializer):
     email = serializers.EmailField(required=False)
     password = serializers.CharField(write_only=True, required=False)
-    phone_number = serializers.CharField(required=False)
+    phone_number = PhoneNumberField(required=False)
     otp = serializers.CharField(required=False)
 
     def validate(self, attrs):
@@ -97,7 +78,7 @@ class UserLoginSerializer(serializers.Serializer):
                 raise serializers.ValidationError("User with this phone number does not exist.")
             if environment in ['production', 'staging']:
                 # Verify OTP in production and staging
-                response = verify_otp(phone_number, otp)
+                response = verify_otp(str(phone_number), otp)
                 if response['type'] != 'success':
                     raise serializers.ValidationError("OTP verification failed.")
             else:
@@ -204,10 +185,17 @@ class ProfileSerializer(serializers.ModelSerializer):
             data.pop('specialization', None)
         return data
 class DoctorRegistrationSerializer(serializers.ModelSerializer):
+    phone_number = PhoneNumberField()
+
     class Meta:
         model = CustomUser
         fields = ['id', 'phone_number']  # Include only relevant fields
-        read_only_fields = ['id', 'role'] 
+        read_only_fields = ['id', 'role']
+
+    def validate_phone_number(self, value):
+        if CustomUser.objects.filter(phone_number=value).exists():
+            raise serializers.ValidationError("A user with this phone number already exists.")
+        return value
 
     def create(self, validated_data):
         phone_number = validated_data.get('phone_number')
@@ -217,7 +205,7 @@ class DoctorRegistrationSerializer(serializers.ModelSerializer):
             user = CustomUser.objects.get(phone_number=phone_number)
             print(user)
             if environment in ['production', 'staging']:
-                send_otp(phone_number)
+                send_otp(str(phone_number))
                 self.context['otp_sent'] = True
             else:
                 self.context['otp_sent'] = False
@@ -227,7 +215,7 @@ class DoctorRegistrationSerializer(serializers.ModelSerializer):
         except CustomUser.DoesNotExist:
             # Registration flow
             validated_data['role'] = 'doctor'
-            base_username = slugify(phone_number)
+            base_username = slugify(str(phone_number))
             username = base_username
             suffix = 1
             while CustomUser.objects.filter(username=username).exists():
@@ -249,7 +237,7 @@ class DoctorRegistrationSerializer(serializers.ModelSerializer):
 
             # Send OTP in allowed envs
             if environment in ['production', 'staging']:
-                send_otp(phone_number)
+                send_otp(str(phone_number))
                 self.context['otp_sent'] = True
             else:
                 self.context['otp_sent'] = False
