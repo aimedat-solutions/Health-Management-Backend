@@ -174,42 +174,41 @@ class SendOrResendSMSAPIView(GenericAPIView):
     API endpoint to send OTP to the user's phone number.
     """
     def post(self, request):
-        phone_number = request.data.get("phone_number", None)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        phone_number = serializer.validated_data['phone_number']
         environment = os.getenv('DJANGO_ENV', 'development')
-        
-        if phone_number:
-            try:
-                user = CustomUser.objects.get(phone_number=phone_number)
 
-                if environment in ['production', 'staging']:
-                    send_otp(phone_number)  # Send OTP only in production or staging
-                    return Response({"message": "OTP sent for login.", "is_new_user": user.is_first_login}, status=status.HTTP_200_OK)
-                else:
-                    return Response({"message": "OTP sending is disabled in this environment."}, status=status.HTTP_200_OK)
+        try:
+            user = CustomUser.objects.get(phone_number=phone_number)
 
-            except CustomUser.DoesNotExist:
-                random_password = get_random_string(length=8)  # You can choose the length
-                hashed_password = make_password(random_password)
-                user = CustomUser(
-                    phone_number=phone_number, 
-                    role='patient', 
-                    username=phone_number, 
-                    is_first_login=True, 
-                )
-                user.set_password(hashed_password)
-                user.save()
-                group = Group.objects.get(name=user.role)
-                user.groups.add(group)
-                if not Profile.objects.filter(user=user).exists():
-                    Profile.objects.create(user=user)
+            if environment in ['production', 'staging']:
+                send_otp(str(phone_number))  # Send OTP only in production or staging
+                return Response({"message": "OTP sent for login.", "is_new_user": user.is_first_login}, status=status.HTTP_200_OK)
+            else:
+                return Response({"message": "OTP sending is disabled in this environment."}, status=status.HTTP_200_OK)
 
-                if environment in ['production', 'staging']:
-                    send_otp(phone_number)  # Send OTP only in production or staging
-                    return Response({"message": "OTP sent for registration.", "is_new_user": user.is_first_login}, status=status.HTTP_200_OK)
-                else:
-                    return Response({"message": "OTP sending is disabled in this environment."}, status=status.HTTP_200_OK)
-        else:
-            return Response({"error": "Phone number is required"}, status=status.HTTP_400_BAD_REQUEST)
+        except CustomUser.DoesNotExist:
+            random_password = get_random_string(length=8)  # You can choose the length
+            hashed_password = make_password(random_password)
+            user = CustomUser(
+                phone_number=phone_number, 
+                role='patient', 
+                username=str(phone_number), 
+                is_first_login=True, 
+            )
+            user.set_password(hashed_password)
+            user.save()
+            group = Group.objects.get(name=user.role)
+            user.groups.add(group)
+            if not Profile.objects.filter(user=user).exists():
+                Profile.objects.create(user=user)
+
+            if environment in ['production', 'staging']:
+                send_otp(str(phone_number))  # Send OTP only in production or staging
+                return Response({"message": "OTP sent for registration.", "is_new_user": user.is_first_login}, status=status.HTTP_200_OK)
+            else:
+                return Response({"message": "OTP sending is disabled in this environment."}, status=status.HTTP_200_OK)
         
         
 class ProfileAPIView(APIView):
