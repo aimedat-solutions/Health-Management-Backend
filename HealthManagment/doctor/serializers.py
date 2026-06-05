@@ -204,22 +204,19 @@ class PatientDietQuestionSerializer(serializers.ModelSerializer):
         return self.get_full_url(obj, "dinner_audio")
 
 class PatientExerciseLogSerializer(serializers.ModelSerializer):
-    morning_audio = serializers.SerializerMethodField()
-    evening_audio = serializers.SerializerMethodField()
+    patient_name = serializers.SerializerMethodField()
+    logs = serializers.SerializerMethodField()
 
     class Meta:
         model = PatientExerciseLog
-        fields = "__all__"
+        fields = ['id', 'patient', 'patient_name', 'date', 'logs', 'created_at']
 
-    def get_full_url(self, obj, field):
-        request = self.context.get("request")
-        file = getattr(obj, field)
-        if file:
-            return request.build_absolute_uri(file.url)
-        return None
+    def get_patient_name(self, obj):
+        profile = getattr(obj.patient, 'profile', None)
+        if profile:
+            return f"{profile.first_name or ''} {profile.last_name or ''}".strip()
+        return str(obj.patient.phone_number)
 
-    def get_morning_audio(self, obj):
-        return self.get_full_url(obj, "morning_audio")
-
-    def get_evening_audio(self, obj):
-        return self.get_full_url(obj, "evening_audio")
+    def get_logs(self, obj):
+        from patient.serializers import ExerciseLogEntrySerializer
+        return ExerciseLogEntrySerializer(obj.entries.all(), many=True).data

@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from users.models import ExerciseDate, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, PatientExerciseLog, Option, DietPlanStatus,Exercise,ExerciseStatus,HealthStatus,DietPlanDate,DietPlanMeal,DietPlan,ExtraMeal, DietPlanCompletedPortion,MealPortion
+from users.models import ExerciseDate, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, PatientExerciseLog, ExerciseLogEntry, Option, DietPlanStatus,Exercise,ExerciseStatus,HealthStatus,DietPlanDate,DietPlanMeal,DietPlan,ExtraMeal, DietPlanCompletedPortion,MealPortion
 from .serializers import ( PatientResponseSerializer,EmptyLabReportSerializer, HealthStatusSerializer, LabReportSerializer, 
                           QuestionSerializer, DietQuestionSerializer, DietPlanSerializer, DietPlanStatusSerializer, CurrentMealSerializer, BulkPatientResponseSerializer,
                           ExerciseStatusSerializer, AssignedExerciseSerializer, ExerciseLogSerializer)
@@ -758,14 +758,11 @@ class ExerciseLogView(generics.ListCreateAPIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        log = PatientExerciseLog.objects.create(
-            patient=user,
-            date=request.data.get("date"),
-            morning=request.data.get("morning"),
-            evening=request.data.get("evening"),
-            morning_audio=request.FILES.get("morning_audio"),
-            evening_audio=request.FILES.get("evening_audio"),
-        )
+        data = request.data.copy()
+        data['patient'] = user.id
+        serializer = ExerciseLogSerializer(data=data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        log = serializer.save()
 
         user.is_first_login = False
         user.save()
