@@ -327,6 +327,7 @@ class Profile(AuditModel):
     profile_image = models.ImageField(upload_to='profile_images/', null=True, blank=True)
     height = models.FloatField(help_text="Height in cm", null=True, blank=True)
     weight = models.FloatField(help_text="Weight in kg", null=True, blank=True)
+    blood_pressure = models.CharField(max_length=20, null=True, blank=True, default="120/80", help_text="e.g. 120/80")
     lmp_date = models.DateField(null=True, blank=True, help_text="Last Menstrual Period")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

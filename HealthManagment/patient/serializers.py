@@ -36,9 +36,10 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
     time_range = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
     others = serializers.SerializerMethodField()
+    completed_portions = serializers.SerializerMethodField()
     class Meta:
         model = DietPlanMeal
-        fields = ['id','meal_type', 'time_range', 'portions', 'status', 'others']
+        fields = ['id','meal_type', 'time_range', 'portions', 'status', 'others', 'completed_portions']
 
     def get_portions(self, obj):
         return [{"id": p.id, "name": p.name} for p in obj.meal_portions.all()]
@@ -82,13 +83,31 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
                 {
                     "id": e.id,
                     "text": e.item_name,
-                    # "quantity": e.quantity,
-                    # "notes": e.notes,
-                    "audio_entry": bool(e.audio_entry)
+                    "quantity": e.quantity,
+                    "notes": e.notes,
+                    "image": request.build_absolute_uri(e.image.url) if e.image and request else None,
+                    "audio_entry": request.build_absolute_uri(e.audio_entry.url) if e.audio_entry and request else None,
                 } for e in extra_items
             ]
         return []
-    
+
+    def get_completed_portions(self, obj):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        date = self.context.get("target_date", timezone.now().date())
+
+        if user:
+            completed = DietPlanCompletedPortion.objects.filter(
+                patient=user,
+                diet_plan_meal=obj,
+                date=date
+            ).select_related('portion')
+            return [
+                {"id": cp.portion.id, "name": cp.portion.name}
+                for cp in completed
+            ]
+        return []
+
 class DietPlanSerializer(serializers.ModelSerializer):
     meals = serializers.SerializerMethodField()
 

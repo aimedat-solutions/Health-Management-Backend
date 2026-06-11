@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from users.models import CustomUser, Profile, DietPlan, MealPortion, DietPlanDate, DietPlanMeal, DietPlanStatus, HealthStatus,ExerciseDate,DoctorExerciseResponse,PatientDietQuestion,PatientExerciseLog
+from users.models import CustomUser, Profile, DietPlan, MealPortion, DietPlanDate, DietPlanMeal, DietPlanStatus, DietPlanCompletedPortion, ExtraMeal, HealthStatus,ExerciseDate,DoctorExerciseResponse,PatientDietQuestion,PatientExerciseLog
 from django.utils import timezone
 class HealthStatusSerializer(serializers.ModelSerializer):
     class Meta:
@@ -23,17 +23,32 @@ class ProfileSerializer(serializers.ModelSerializer):
 class PatientSerializer(serializers.ModelSerializer):
     profile = ProfileSerializer(read_only=True)
     healthData = serializers.SerializerMethodField()
+    blood_pressure = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     class Meta:
         model = CustomUser
         fields = [
             "id", "role", "username", "phone_number", "email", "is_verified","is_first_login", "initial_question_completed", "ask_diet_question", 
             "last_diet_question_answered","last_question_answered_at",
-            "profile", "healthData",
+            "profile", "healthData", "blood_pressure",
         ]
 
     def get_healthData(self, obj):
         health_status = HealthStatus.objects.filter(patient=obj).first()
         return HealthStatusSerializer(health_status).data if health_status else {}
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        profile = getattr(instance, 'profile', None)
+        data['blood_pressure'] = profile.blood_pressure if profile else None
+        return data
+
+    def update(self, instance, validated_data):
+        blood_pressure = validated_data.pop('blood_pressure', None)
+        if blood_pressure is not None:
+            profile, _ = Profile.objects.get_or_create(user=instance)
+            profile.blood_pressure = blood_pressure
+            profile.save(update_fields=['blood_pressure'])
+        return super().update(instance, validated_data)
 
 class MealPortionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -51,9 +66,11 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
     time_range = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
     statuses_by_date = serializers.SerializerMethodField()
+    completed_portions = serializers.SerializerMethodField()
+    others = serializers.SerializerMethodField()
     class Meta:
         model = DietPlanMeal
-        fields = ["id", "meal_type", "time_range", "portions", "status", "statuses_by_date"]
+        fields = ["id", "meal_type", "time_range", "portions", "status", "statuses_by_date", "completed_portions", "others"]
 
     def get_time_range(self, obj):
         if obj.start_time and obj.end_time:
@@ -92,7 +109,40 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
             }
             for s in statuses
         ]
-    
+
+    def get_completed_portions(self, obj):
+        target_date = self.context.get("target_date") or timezone.now().date()
+        patient = obj.diet_plan.patient
+        completed = DietPlanCompletedPortion.objects.filter(
+            patient=patient,
+            diet_plan_meal=obj,
+            date=target_date
+        ).select_related('portion')
+        return [
+            {"id": cp.portion.id, "name": cp.portion.name}
+            for cp in completed
+        ]
+
+    def get_others(self, obj):
+        target_date = self.context.get("target_date") or timezone.now().date()
+        patient = obj.diet_plan.patient
+        request = self.context.get('request')
+        extra_items = ExtraMeal.objects.filter(
+            patient=patient,
+            diet_plan_meal=obj,
+            date=target_date
+        )
+        return [
+            {
+                "id": e.id,
+                "text": e.item_name,
+                "quantity": e.quantity,
+                "notes": e.notes,
+                "image": request.build_absolute_uri(e.image.url) if e.image and request else None,
+                "audio_entry": request.build_absolute_uri(e.audio_entry.url) if e.audio_entry and request else None,
+            } for e in extra_items
+        ]
+
 class DietPlanDateSerializer(serializers.ModelSerializer):
     class Meta:
         model = DietPlanDate
@@ -161,7 +211,7 @@ class DietPlanReadSerializer(serializers.ModelSerializer):
         return f"{first_name} {last_name}".strip() or "Doctor"
 
     def get_dates(self, obj):
-        return [date.date for date in obj.diet_dates.all()]
+        return [d.date for d in obj.diet_dates.all()]
     
     
 class ExcerciseDateAssignSerializer(serializers.Serializer):
