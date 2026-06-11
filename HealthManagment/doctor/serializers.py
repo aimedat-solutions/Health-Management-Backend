@@ -72,6 +72,13 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
         model = DietPlanMeal
         fields = ["id", "meal_type", "time_range", "portions", "status", "statuses_by_date", "completed_portions", "others"]
 
+    def _get_target_date(self, obj):
+        target_date = self.context.get("target_date")
+        if target_date:
+            return target_date
+        latest = obj.diet_plan.diet_dates.order_by('-date').first()
+        return latest.date if latest else timezone.now().date()
+
     def get_time_range(self, obj):
         if obj.start_time and obj.end_time:
             try:
@@ -82,7 +89,7 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
     
     def get_status(self, obj):
         request = self.context.get('request')
-        target_date = self.context.get("target_date") or timezone.now().date()
+        target_date = self._get_target_date(obj)
 
         if not request or not request.user.is_authenticated:
             return "pending"
@@ -111,7 +118,7 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
         ]
 
     def get_completed_portions(self, obj):
-        target_date = self.context.get("target_date") or timezone.now().date()
+        target_date = self._get_target_date(obj)
         patient = obj.diet_plan.patient
         completed = DietPlanCompletedPortion.objects.filter(
             patient=patient,
@@ -124,7 +131,7 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
         ]
 
     def get_others(self, obj):
-        target_date = self.context.get("target_date") or timezone.now().date()
+        target_date = self._get_target_date(obj)
         patient = obj.diet_plan.patient
         request = self.context.get('request')
         extra_items = ExtraMeal.objects.filter(
