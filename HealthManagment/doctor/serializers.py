@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from users.models import CustomUser, Profile, DietPlan, MealPortion, DietPlanDate, DietPlanMeal, DietPlanStatus, DietPlanCompletedPortion, ExtraMeal, HealthStatus,ExerciseDate,DoctorExerciseResponse,PatientDietQuestion,PatientExerciseLog
+from users.models import CustomUser, Profile, DietPlan, MealPortion, DietPlanDate, DietPlanMeal, DietPlanStatus, DietPlanCompletedPortion, ExtraMeal, HealthStatus,DoctorExerciseResponse,PatientDietQuestion,PatientExerciseLog
 from django.utils import timezone
 class HealthStatusSerializer(serializers.ModelSerializer):
     class Meta:
