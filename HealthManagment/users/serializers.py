@@ -150,7 +150,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     profile_image = serializers.ImageField(required=False, allow_null=True)
     verified = serializers.BooleanField(source='user.verified', read_only=True)
     lmp_date = serializers.DateField(required=False, allow_null=True) 
-    blood_pressure = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    blood_pressure = serializers.JSONField(required=False, allow_null=True)
     pregnancy_details = serializers.SerializerMethodField()
     class Meta:
         model = Profile

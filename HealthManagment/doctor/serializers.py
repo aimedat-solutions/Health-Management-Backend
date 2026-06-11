@@ -23,7 +23,7 @@ class ProfileSerializer(serializers.ModelSerializer):
 class PatientSerializer(serializers.ModelSerializer):
     profile = ProfileSerializer(read_only=True)
     healthData = serializers.SerializerMethodField()
-    blood_pressure = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    blood_pressure = serializers.JSONField(required=False, allow_null=True)
     class Meta:
         model = CustomUser
         fields = [
