@@ -17,7 +17,7 @@ class ProfileSerializer(serializers.ModelSerializer):
         fields = [
             "first_name", "last_name", "date_of_birth", "age",
             "gender", "occupation", "address", "specialization",
-            "profile_image", "height", "weight", "lmp_date",
+            "profile_image", "height", "weight", "lmp_date", "blood_pressure",
             "pregnancy_month", "gestational_age", "edd",
         ]
 class PatientSerializer(serializers.ModelSerializer):

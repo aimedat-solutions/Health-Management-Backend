@@ -549,7 +549,8 @@ class DashboardView(APIView):
 
                 recent_mothers.append({
                     "id": user_obj.id,
-                    "name": user_obj.get_full_name() or user_obj.first_name,
+                    "name": f"{p.first_name or ''} {p.last_name or ''}".strip(),
+                    "phone_number": str(user_obj.phone_number) if user_obj.phone_number else "",
                     "gestational_age": p.gestational_age or "NA",
                     "bp": getattr(health, "blood_pressure", "NA"),
                     "sugar": getattr(health, "blood_sugar", "NA"),
