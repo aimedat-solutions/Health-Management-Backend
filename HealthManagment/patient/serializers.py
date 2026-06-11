@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from users.models import ExerciseDate, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, PatientExerciseLog, DietPlanStatus, ExerciseStatus,DietPlanMeal,DietPlanDate,DietPlanCompletedPortion,ExtraMeal
+from users.models import CustomUser, ExerciseDate, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, PatientExerciseLog, ExerciseLogEntry, DietPlanStatus, ExerciseStatus,DietPlanMeal,DietPlanDate,DietPlanCompletedPortion,ExtraMeal
 from users.serializers import OptionSerializer
 from django.utils import timezone
 from datetime import date
@@ -36,9 +36,10 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
     time_range = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
     others = serializers.SerializerMethodField()
+    completed_portions = serializers.SerializerMethodField()
     class Meta:
         model = DietPlanMeal
-        fields = ['id','meal_type', 'time_range', 'portions', 'status', 'others']
+        fields = ['id','meal_type', 'time_range', 'portions', 'status', 'others', 'completed_portions']
 
     def get_portions(self, obj):
         return [{"id": p.id, "name": p.name} for p in obj.meal_portions.all()]
@@ -82,13 +83,31 @@ class DietPlanMealSerializer(serializers.ModelSerializer):
                 {
                     "id": e.id,
                     "text": e.item_name,
-                    # "quantity": e.quantity,
-                    # "notes": e.notes,
-                    "audio_entry": bool(e.audio_entry)
+                    "quantity": e.quantity,
+                    "notes": e.notes,
+                    "image": request.build_absolute_uri(e.image.url) if e.image and request else None,
+                    "audio_entry": request.build_absolute_uri(e.audio_entry.url) if e.audio_entry and request else None,
                 } for e in extra_items
             ]
         return []
-    
+
+    def get_completed_portions(self, obj):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        date = self.context.get("target_date", timezone.now().date())
+
+        if user:
+            completed = DietPlanCompletedPortion.objects.filter(
+                patient=user,
+                diet_plan_meal=obj,
+                date=date
+            ).select_related('portion')
+            return [
+                {"id": cp.portion.id, "name": cp.portion.name}
+                for cp in completed
+            ]
+        return []
+
 class DietPlanSerializer(serializers.ModelSerializer):
     meals = serializers.SerializerMethodField()
 
@@ -268,14 +287,35 @@ class AssignedExerciseSerializer(serializers.ModelSerializer):
 
         return "pending"
 
+class ExerciseLogEntrySerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    timeSlot = serializers.ChoiceField(choices=[
+        'EARLY_MORNING', 'MORNING', 'AFTERNOON', 'EVENING', 'NIGHT'
+    ], source='time_slot')
+    activityType = serializers.ChoiceField(choices=[
+        'WALKING', 'STRETCHING', 'SLOW_WALK', 'YOGA', 'BREATHING', 'LIGHT_EXERCISE'
+    ], source='activity_type')
+    durationMinutes = serializers.IntegerField(source='duration_minutes', min_value=1)
+    effortLevel = serializers.ChoiceField(choices=[
+        'EASY', 'COMFORTABLE', 'MODERATE', 'VIGOROUS'
+    ], source='effort_level')
+    symptoms = serializers.ListField(child=serializers.CharField())
+
 class ExerciseLogSerializer(serializers.ModelSerializer):
-    date = serializers.SerializerMethodField()
+    logs = ExerciseLogEntrySerializer(many=True, source='entries')
+    date = serializers.DateField()
+    patient = serializers.PrimaryKeyRelatedField(
+        queryset=CustomUser.objects.filter(role='patient'), write_only=True
+    )
 
     class Meta:
         model = PatientExerciseLog
-        fields = '__all__'
+        fields = ['id', 'date', 'patient', 'logs']
 
-    def get_date(self, obj):
-        if obj.date:
-            return obj.date.date().isoformat() if hasattr(obj.date, 'date') else obj.date
-        return None
+    def create(self, validated_data):
+        entries_data = validated_data.pop('entries', [])
+        exercise_log = PatientExerciseLog.objects.create(**validated_data)
+        ExerciseLogEntry.objects.bulk_create([
+            ExerciseLogEntry(exercise_log=exercise_log, **entry) for entry in entries_data
+        ])
+        return exercise_log

@@ -327,6 +327,7 @@ class Profile(AuditModel):
     profile_image = models.ImageField(upload_to='profile_images/', null=True, blank=True)
     height = models.FloatField(help_text="Height in cm", null=True, blank=True)
     weight = models.FloatField(help_text="Weight in kg", null=True, blank=True)
+    blood_pressure = models.JSONField(null=True, blank=True, default=dict, help_text='{"systolic": 120, "diastolic": 80, "unit": "mmHg"}')
     lmp_date = models.DateField(null=True, blank=True, help_text="Last Menstrual Period")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -543,24 +544,64 @@ class PatientDietQuestion(AuditModel):
         return f"Diet question for {self.patient.username} on {self.date}"
 
 
+class TimeSlotChoices(models.TextChoices):
+    EARLY_MORNING = "EARLY_MORNING", "Early Morning"
+    MORNING = "MORNING", "Morning"
+    AFTERNOON = "AFTERNOON", "Afternoon"
+    EVENING = "EVENING", "Evening"
+    NIGHT = "NIGHT", "Night"
+
+
+class ActivityTypeChoices(models.TextChoices):
+    WALKING = "WALKING", "Walking"
+    STRETCHING = "STRETCHING", "Stretching"
+    SLOW_WALK = "SLOW_WALK", "Slow Walk"
+    YOGA = "YOGA", "Yoga"
+    BREATHING = "BREATHING", "Breathing"
+    LIGHT_EXERCISE = "LIGHT_EXERCISE", "Light Exercise"
+
+
+class EffortLevelChoices(models.TextChoices):
+    EASY = "EASY", "Easy"
+    COMFORTABLE = "COMFORTABLE", "Comfortable"
+    MODERATE = "MODERATE", "Moderate"
+    VIGOROUS = "VIGOROUS", "Vigorous"
+
+
+class SymptomChoices(models.TextChoices):
+    NONE = "NONE", "None"
+    BACK_PAIN = "BACK_PAIN", "Back Pain"
+    FATIGUE = "FATIGUE", "Fatigue"
+    SHORTNESS_OF_BREATH = "SHORTNESS_OF_BREATH", "Shortness of Breath"
+    DIZZINESS = "DIZZINESS", "Dizziness"
+    SWELLING = "SWELLING", "Swelling"
+    CONTRACTIONS = "CONTRACTIONS", "Contractions"
+    HEADACHE = "HEADACHE", "Headache"
+    NAUSEA = "NAUSEA", "Nausea"
+
+
 class PatientExerciseLog(AuditModel):
     patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, limit_choices_to={'role': 'patient'})
     date = models.DateField(default=timezone.now)
-
-    morning = models.TextField(null=True, blank=True)
-    evening = models.TextField(null=True, blank=True)
-
-    morning_audio = models.FileField(upload_to="exercise_logs/audio/", null=True, blank=True)
-    evening_audio = models.FileField(upload_to="exercise_logs/audio/", null=True, blank=True)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["-date"]
 
     def __str__(self):
         return f"Exercise log for {self.patient.username} on {self.date}"
+
+
+class ExerciseLogEntry(models.Model):
+    exercise_log = models.ForeignKey(PatientExerciseLog, on_delete=models.CASCADE, related_name='entries')
+    time_slot = models.CharField(max_length=20, choices=TimeSlotChoices.choices)
+    activity_type = models.CharField(max_length=30, choices=ActivityTypeChoices.choices)
+    duration_minutes = models.PositiveSmallIntegerField()
+    effort_level = models.CharField(max_length=20, choices=EffortLevelChoices.choices)
+    symptoms = models.JSONField(default=list)
+    custom_symptom = models.CharField(max_length=100, blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.get_time_slot_display()} - {self.get_activity_type_display()} ({self.duration_minutes}min)"
 
 
     ####################################################### LabReport Model ################################################################################################
