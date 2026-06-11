@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from users.models import ExerciseDate, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, PatientExerciseLog, ExerciseLogEntry, Option, DietPlanStatus,Exercise,ExerciseStatus,HealthStatus,DietPlanDate,DietPlanMeal,DietPlan,ExtraMeal, DietPlanCompletedPortion,MealPortion
+from users.models import ExerciseDate, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, PatientExerciseLog, Option, DietPlanStatus,Exercise,ExerciseStatus,HealthStatus,DietPlanDate,DietPlanMeal,DietPlan,ExtraMeal, DietPlanCompletedPortion,MealPortion
 from .serializers import ( PatientResponseSerializer,EmptyLabReportSerializer, HealthStatusSerializer, LabReportSerializer, 
                           QuestionSerializer, DietQuestionSerializer, DietPlanSerializer, DietPlanStatusSerializer, CurrentMealSerializer, BulkPatientResponseSerializer,
                           ExerciseStatusSerializer, AssignedExerciseSerializer, ExerciseLogSerializer)
