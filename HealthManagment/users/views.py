@@ -459,7 +459,7 @@ class DashboardView(APIView):
         if not role:
             return Response({"error": "User role not found"}, status=400)
 
-        response_data = {"role": role}
+        response_data = {"role": role, "username": user.profile.first_name if hasattr(user, "profile") else user.username}
 
         if role == "doctor":
 
