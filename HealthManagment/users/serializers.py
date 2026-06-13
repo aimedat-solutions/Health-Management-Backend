@@ -276,14 +276,33 @@ class ExerciseSerializer(serializers.ModelSerializer):
 
 class ExerciseDateSerializer(serializers.ModelSerializer):
     exercise_details = ExerciseSerializer(source="exercise", read_only=True)
+    status = serializers.SerializerMethodField()
+
     class Meta:
         model = ExerciseDate
         fields = [
             "id",
             "date",
-            
-            "exercise_details"
+            "exercise_details",
+            "status",
         ]
+
+    def get_status(self, obj):
+        patient_status = getattr(obj, 'patient_status', [])
+        if patient_status:
+            s = patient_status[0]
+            return {
+                "status": s.status,
+                "updated_at": s.updated_at,
+                "calories_burned": s.calories_burned,
+                "reason_audio": s.reason_audio.url if s.reason_audio else None,
+            }
+        return {
+            "status": "pending",
+            "updated_at": None,
+            "calories_burned": None,
+            "reason_audio": None,
+        }
         
         
 class OptionSerializer(serializers.ModelSerializer):
