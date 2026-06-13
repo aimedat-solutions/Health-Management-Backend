@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
-from users.models import CustomUser, DietPlan, MealPortion, Exercise, LabReport, PatientResponse, PatientDietQuestion, PatientExerciseLog, DietPlanDate,ExerciseDate
+from users.models import CustomUser, DietPlan, MealPortion, Exercise, LabReport, PatientResponse, PatientDietQuestion, PatientExerciseLog, DietPlanDate,ExerciseDate, ExerciseStatus
 from django.shortcuts import get_object_or_404
 from users.nutrition_service import fetch_nutrition_data
 from .serializers import PatientSerializer, DietPlanCreateSerializer, MealPortionSerializer,DietPlanReadSerializer,PatientDietQuestionSerializer,PatientExerciseLogSerializer,ExcerciseDateAssignSerializer,DoctorExerciseResponseSerializer
@@ -14,7 +14,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from users.filters import CustomUserFilter
 from users.pagination import Pagination
 from django.db.models.functions import ExtractMonth, ExtractYear, Now
-from django.db.models import IntegerField, F, ExpressionWrapper
+from django.db.models import IntegerField, F, ExpressionWrapper, Prefetch
 from django.utils.timezone import now
 from datetime import date
 class PatientManagementViewSet(viewsets.ModelViewSet):
@@ -61,7 +61,9 @@ class PatientManagementViewSet(viewsets.ModelViewSet):
     def retrieve(self, request, pk=None):
         patient = get_object_or_404(CustomUser, id=pk, role='patient')
         
-        assigned_exercises = ExerciseDate.objects.filter(patient=patient)
+        assigned_exercises = ExerciseDate.objects.filter(patient=patient).prefetch_related(
+            Prefetch('status_entries', queryset=ExerciseStatus.objects.filter(user=patient), to_attr='patient_status')
+        )
         diet_plans = DietPlan.objects.filter(patient=patient)
         lab_reports = LabReport.objects.filter(patient=patient)
         questions = PatientResponse.objects.filter(user=patient)
