@@ -1,9 +1,9 @@
 from django.urls import path,include
 from rest_framework.routers import DefaultRouter
-from .views import ( ExerciseListCreateView,ExerciseDetailView,HealthEducationView,
+from .views import ( ExerciseListCreateView,ExerciseDetailView,HealthEducationViewSet,
  SendOrResendSMSAPIView,AdminCreateView,DoctorListCreateView,DoctorDetailView,
  UserListCreateView, UserDetailView,QuestionListCreateView, QuestionDetailView, ProfileAPIView,
- CustomLoginView,SyncStepsView, TodayStepsView, WeeklyStepsView,AppContentView,HelpContentView,
+ CustomLoginView,SyncStepsView, TodayStepsView, WeeklyStepsView,AppContentView,HelpContentViewSet,
  AcceptLegalView,AdminDietPlanListView,AdminDoctorDietPlansView,AdminDoctorPatientsView,DashboardView
 )
 from doctor.views import MealPortionViewSet
@@ -12,6 +12,8 @@ app_name = 'users'
 
 router = DefaultRouter()
 router.register(r"mealportions", MealPortionViewSet)
+router.register(r"health-education", HealthEducationViewSet, basename="health-education")
+router.register(r"help-content", HelpContentViewSet, basename="help-content")
 
 urlpatterns = [
     path('', include(router.urls)),
@@ -31,8 +33,6 @@ urlpatterns = [
     
     path("legal-accept/", AcceptLegalView.as_view()),
     path("app-content/", AppContentView.as_view()),
-    path("help-content/", HelpContentView.as_view()),
-    path("health-education/", HealthEducationView.as_view()),
     path("steps/sync/", SyncStepsView.as_view()),
     path("steps/today/", TodayStepsView.as_view()),
     path("steps/weekly/", WeeklyStepsView.as_view()),

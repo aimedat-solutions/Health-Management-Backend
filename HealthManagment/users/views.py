@@ -867,31 +867,53 @@ class AcceptLegalView(APIView):
         )
 
     
-class HealthEducationView(APIView):
+class HealthEducationViewSet(viewsets.ModelViewSet):
     serializer_class = HealthEducationSerializer
+    queryset = HealthEducation.objects.all()
 
-    def get(self, request):
-        data = HealthEducation.objects.filter(is_active=True).order_by("order")
-        serializer = HealthEducationSerializer(
-            data,
-            many=True,
-            context={"request": request} 
-        )
-        return Response(serializer.data)
+    def get_permissions(self):
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            return [IsAdminOrSuperAdmin()]
+        return []
+
+    def get_queryset(self):
+        qs = HealthEducation.objects.all().order_by("order")
+        if self.action == 'list':
+            user = self.request.user
+            is_admin = bool(
+                user.is_authenticated
+                and IsAdminOrSuperAdmin().has_permission(self.request, self)
+            )
+            if not is_admin:
+                qs = qs.filter(is_active=True)
+        return qs
     
-class HelpContentView(APIView):
+class HelpContentViewSet(viewsets.ModelViewSet):
     serializer_class = HelpContentSerializer
-    def get(self, request):
-        screen = request.query_params.get("screen")
-        content_type = request.query_params.get("type")
+    queryset = HelpContent.objects.all()
 
-        qs = HelpContent.objects.filter(is_active=True)
-        if screen:
-            qs = qs.filter(screen_name=screen)
-        if content_type:
-            qs = qs.filter(content_type=content_type)
+    def get_permissions(self):
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            return [IsAdminOrSuperAdmin()]
+        return []
 
-        return Response(HelpContentSerializer(qs, many=True).data)
+    def get_queryset(self):
+        qs = HelpContent.objects.all().order_by("step_order")
+        if self.action == 'list':
+            user = self.request.user
+            is_admin = bool(
+                user.is_authenticated
+                and IsAdminOrSuperAdmin().has_permission(self.request, self)
+            )
+            if not is_admin:
+                qs = qs.filter(is_active=True)
+            screen = self.request.query_params.get("screen")
+            content_type = self.request.query_params.get("type")
+            if screen:
+                qs = qs.filter(screen_name=screen)
+            if content_type:
+                qs = qs.filter(content_type=content_type)
+        return qs
 
 class AdminDietPlanListView(generics.ListAPIView):
     """Admin/Superadmin can view all diet plans with doctor and patient info"""
