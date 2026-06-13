@@ -8,6 +8,7 @@ from .serializers import ( PatientResponseSerializer,EmptyLabReportSerializer, H
 from users.permissions import PermissionsManager,IsDoctorUser,IsPatientUser
 from rest_framework import viewsets, permissions,generics,status
 from rest_framework import serializers
+
 from users.filters import DietQuestionFilter,DietPlanMealFilter,LabReportFilter,ExerciseFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import OrderingFilter
@@ -18,7 +19,7 @@ from datetime import timedelta,datetime
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 import json
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 class LabReportViewSet(viewsets.ModelViewSet):
     permission_classes = [PermissionsManager]
     queryset = LabReport.objects.all()
@@ -714,9 +715,32 @@ class QuestionFlowStatusView(APIView):
         })
 
 class ExerciseLogView(generics.ListCreateAPIView):
+    """
+    --- REQUEST EXAMPLE  ---
+    
+    {
+      "date": "2026-06-05",
+      "logs": [
+        {
+          "timeSlot": "EARLY_MORNING",
+          "activityType": "WALKING",
+          "durationMinutes": 20,
+          "effortLevel": "COMFORTABLE",
+          "symptoms": ["NONE"]
+        },
+        {
+          "timeSlot": "EVENING",
+          "activityType": "STRETCHING",
+          "durationMinutes": 10,
+          "effortLevel": "EASY",
+          "symptoms": ["BACK_PAIN"]
+        }
+      ]
+    }
+    """
     permission_classes = [PermissionsManager]
     serializer_class = ExerciseLogSerializer
-    parser_classes = [MultiPartParser, FormParser]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
     codename = 'patientexerciselog'
 
     def get_queryset(self):
@@ -758,8 +782,12 @@ class ExerciseLogView(generics.ListCreateAPIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        data = request.data.copy()
-        data['patient'] = user.id
+        if isinstance(request.data, dict):
+            data = {**request.data, 'patient': user.id}
+        elif hasattr(request.data, 'dict'):
+            data = {**request.data.dict(), 'patient': user.id}
+        else:
+            data = {'patient': user.id, 'date': str(request.data) if request.data else None}
         serializer = ExerciseLogSerializer(data=data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         log = serializer.save()

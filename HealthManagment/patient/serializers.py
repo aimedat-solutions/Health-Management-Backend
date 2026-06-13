@@ -299,7 +299,8 @@ class ExerciseLogEntrySerializer(serializers.Serializer):
     effortLevel = serializers.ChoiceField(choices=[
         'EASY', 'COMFORTABLE', 'MODERATE', 'VIGOROUS'
     ], source='effort_level')
-    symptoms = serializers.ListField(child=serializers.CharField())
+    symptoms = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+    customSymptom = serializers.CharField(source='custom_symptom', required=False, allow_null=True, allow_blank=True)
 
 class ExerciseLogSerializer(serializers.ModelSerializer):
     logs = ExerciseLogEntrySerializer(many=True, source='entries')
@@ -316,6 +317,6 @@ class ExerciseLogSerializer(serializers.ModelSerializer):
         entries_data = validated_data.pop('entries', [])
         exercise_log = PatientExerciseLog.objects.create(**validated_data)
         ExerciseLogEntry.objects.bulk_create([
-            ExerciseLogEntry(exercise_log=exercise_log, **entry) for entry in entries_data
+            ExerciseLogEntry(exercise_log=exercise_log, **entry_data) for entry_data in entries_data
         ])
         return exercise_log
