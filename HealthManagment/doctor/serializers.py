@@ -175,10 +175,39 @@ class DietPlanCreateSerializer(serializers.ModelSerializer):
 
         diet_plan = DietPlan.objects.create(**validated_data)
 
+        self._create_meals(diet_plan, diet_data)
+        self._create_dates(diet_plan, dates_data)
+
+        patient = diet_plan.patient
+        if hasattr(patient, "verified"):
+            patient.is_verified = True
+            patient.verified = True
+            patient.save(update_fields=["verified", "is_verified"])
+
+        return diet_plan
+
+    def update(self, instance, validated_data):
+        diet_data = validated_data.pop("diet", None)
+        dates_data = validated_data.pop("dates", None)
+
+        instance.patient = validated_data.get("patient", instance.patient)
+        instance.save()
+
+        if diet_data is not None:
+            instance.meals.all().delete()
+            self._create_meals(instance, diet_data)
+
+        if dates_data is not None:
+            instance.diet_dates.all().delete()
+            self._create_dates(instance, dates_data)
+
+        return instance
+
+    def _create_meals(self, diet_plan, diet_data):
         for meal_type, meal_details in diet_data.items():
             meal_portions = meal_details.get("meal_portions", [])
-            start_time = meal_details.get("start_time")  
-            end_time = meal_details.get("end_time")      
+            start_time = meal_details.get("start_time")
+            end_time = meal_details.get("end_time")
 
             meal_instance = DietPlanMeal.objects.create(
                 diet_plan=diet_plan,
@@ -188,16 +217,9 @@ class DietPlanCreateSerializer(serializers.ModelSerializer):
             )
             meal_instance.meal_portions.set(meal_portions)
 
+    def _create_dates(self, diet_plan, dates_data):
         for date in dates_data:
             DietPlanDate.objects.create(diet_plan=diet_plan, date=date)
-            
-        patient = diet_plan.patient
-        if hasattr(patient, "verified"):
-            patient.is_verified = True
-            patient.verified = True
-            patient.save(update_fields=["verified", "is_verified"])
-
-        return diet_plan
 
 
 class DietPlanReadSerializer(serializers.ModelSerializer):
