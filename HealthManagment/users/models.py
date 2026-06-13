@@ -295,7 +295,7 @@ class Option(AuditModel):
     )
    
     def __str__(self):
-        return self.value
+        return f"{self.value} - {self.question.question_text[:30]}"
 
 class PatientResponse(AuditModel):
     """

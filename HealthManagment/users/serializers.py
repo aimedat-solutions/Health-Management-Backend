@@ -321,7 +321,7 @@ class OptionCreateSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False) 
     class Meta:
         model = Option
-        fields = '__all__'
+        fields = ['id', 'value', 'type']
 
 # Serializer for creating questions with options
 class QuestionCreateSerializer(serializers.ModelSerializer):

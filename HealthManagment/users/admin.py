@@ -1,6 +1,6 @@
 from django.contrib import admin
 from .models import (
-    CustomUser, Profile, Exercise, DoctorExerciseResponse, Question, PatientDietQuestion, PatientExerciseLog, HealthEducation,HelpContent,
+    CustomUser, Profile, Exercise, DoctorExerciseResponse, Question, PatientDietQuestion, PatientExerciseLog, ExerciseLogEntry, HealthEducation,HelpContent,
     Option, DietPlanMeal, PatientResponse, LabReport, HealthStatus,MealPortion,DietPlan,DietPlanDate,ExerciseDate,DailyStepCount,AppContent
 )
 
@@ -23,7 +23,22 @@ admin.site.register(PatientResponse)
 
 admin.site.register(AppContent)
 
-admin.site.register(PatientExerciseLog)
+class ExerciseLogEntryInline(admin.TabularInline):
+    model = ExerciseLogEntry
+    extra = 1
+    fields = ('time_slot', 'activity_type', 'duration_minutes', 'effort_level', 'symptoms', 'custom_symptom')
+
+@admin.register(PatientExerciseLog)
+class PatientExerciseLogAdmin(admin.ModelAdmin):
+    list_display = ('patient', 'date', 'entry_count', 'created_at')
+    list_filter = ('date',)
+    search_fields = ('patient__phone_number', 'patient__username')
+    inlines = [ExerciseLogEntryInline]
+
+    def entry_count(self, obj):
+        return obj.entries.count()
+    entry_count.short_description = 'Entries'
+
 admin.site.register(PatientDietQuestion)
 admin.site.register(LabReport)
 admin.site.register(HealthStatus)
