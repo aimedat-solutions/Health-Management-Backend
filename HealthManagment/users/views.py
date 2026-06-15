@@ -8,7 +8,7 @@ from .serializers import ( ExerciseSerializer, ProfileSerializer, HealthEducatio
                         PhoneNumberSerializer,HelpContentSerializer,LegalConsentSerializer,DoctorPatientResponseSerializer,DoctorQuestionResponseSerializer
                         )
 from doctor.serializers import DietPlanReadSerializer, DietPlanCreateSerializer
-from django.db.models import Count, Avg, F
+from django.db.models import Count, Avg, F, Max
 from django.contrib.auth.models import Group
 from rest_framework import views, status
 from rest_framework.response import Response
@@ -393,7 +393,13 @@ class QuestionAnswerListCreateView(APIView):
             serializer = QuestionAnswerSerializer(answers, many=True, context={'request': request})
             return Response(serializer.data, status=status.HTTP_200_OK)
         elif user.role == "doctor":
-            answers = PatientResponse.objects.select_related(
+            latest_per_question = PatientResponse.objects.values(
+                'user_id', 'question_id'
+            ).annotate(latest_id=Max('id')).values('latest_id')
+
+            answers = PatientResponse.objects.filter(
+                id__in=latest_per_question
+            ).select_related(
                 'question', 'user', 'selected_option', 'question__parent'
             ).order_by('user_id', 'question__parent_id', 'question_id', 'created_at')
 
