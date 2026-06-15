@@ -118,7 +118,10 @@ class DietPlanSerializer(serializers.ModelSerializer):
     def get_meals(self, obj):
         MEAL_ORDER = ['breakfast', 'lunch', 'snacks', 'dinner']
         all_meals = obj.diet_plan.meals.all()
-        meals_map = {meal.meal_type: meal for meal in all_meals}
+        meals_map = {}
+        for meal in all_meals:
+            key = "snacks" if meal.meal_type == "snack" else meal.meal_type
+            meals_map[key] = meal
 
         sorted_meals = [
             meals_map[meal_type]

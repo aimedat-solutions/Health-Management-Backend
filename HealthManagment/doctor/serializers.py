@@ -205,6 +205,7 @@ class DietPlanCreateSerializer(serializers.ModelSerializer):
 
     def _create_meals(self, diet_plan, diet_data):
         for meal_type, meal_details in diet_data.items():
+            meal_type = "snacks" if meal_type == "snack" else meal_type
             meal_portions = meal_details.get("meal_portions", [])
             start_time = meal_details.get("start_time")
             end_time = meal_details.get("end_time")
