@@ -33,7 +33,11 @@ from rest_framework.exceptions import NotAuthenticated
 from .utils import send_otp, verify_otp
 from .pagination import Pagination
 from django_filters.rest_framework import DjangoFilterBackend
-from .filters import CustomUserFilter, DietPlanFilter,ExerciseFilter
+from rest_framework import filters as drf_filters
+from .filters import (
+    CustomUserFilter, DietPlanFilter, ExerciseFilter,
+    QuestionFilter, HealthEducationFilter,
+)
 import os
 from rest_framework.decorators import action
 from django.shortcuts import get_object_or_404
@@ -278,6 +282,9 @@ class DoctorListCreateView(generics.ListCreateAPIView):
     queryset = CustomUser.objects.filter(role='doctor')
     serializer_class = CustomUserDetailsSerializer
     permission_classes = [IsAdminOrSuperAdmin]
+    filter_backends = [DjangoFilterBackend, drf_filters.SearchFilter]
+    filterset_class = CustomUserFilter
+    search_fields = ["profile__first_name", "profile__last_name", "email", "phone_number"]
 
     def perform_create(self, serializer):
         user = serializer.save(role='doctor')
@@ -315,6 +322,8 @@ class QuestionListCreateView(generics.ListCreateAPIView):
     pagination_class = Pagination
     permission_classes = [PermissionsManager]
     codename = 'question'
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = QuestionFilter
 
     def get_serializer_class(self):
         if self.request.method == 'POST':
@@ -870,6 +879,8 @@ class AcceptLegalView(APIView):
 class HealthEducationViewSet(viewsets.ModelViewSet):
     serializer_class = HealthEducationSerializer
     queryset = HealthEducation.objects.all()
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = HealthEducationFilter
 
     def get_permissions(self):
         if self.action in ('create', 'update', 'partial_update', 'destroy'):
@@ -947,6 +958,8 @@ class AdminDoctorDietPlansView(generics.ListAPIView):
     """Admin/Superadmin can view diet plans assigned by a specific doctor"""
     serializer_class = DietPlanReadSerializer
     permission_classes = [IsAdminOrSuperAdmin]
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = DietPlanFilter
 
     def get_queryset(self):
         doctor_id = self.kwargs.get('doctor_id')
@@ -967,6 +980,9 @@ class AdminDoctorPatientsView(generics.ListAPIView):
     """Admin/Superadmin can view all patients assigned to a specific doctor"""
     serializer_class = CustomUserDetailsSerializer
     permission_classes = [IsAdminOrSuperAdmin]
+    filter_backends = [DjangoFilterBackend, drf_filters.SearchFilter]
+    filterset_class = CustomUserFilter
+    search_fields = ["profile__first_name", "profile__last_name", "email", "phone_number"]
 
     def get_queryset(self):
         doctor_id = self.kwargs.get('doctor_id')

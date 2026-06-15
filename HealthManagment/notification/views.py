@@ -1,20 +1,23 @@
+from rest_framework import generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from django_filters.rest_framework import DjangoFilterBackend
 from .models import Notification, DeviceToken
 from .serializers import NotificationSerializer, DeviceTokenSerializer
 from .services import send_notification
+from users.filters import NotificationFilter
 
-class NotificationListAPI(APIView):
+class NotificationListAPI(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = NotificationSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = NotificationFilter
 
-    def get(self, request):
-        data = Notification.objects.filter(
-            user=request.user
+    def get_queryset(self):
+        return Notification.objects.filter(
+            user=self.request.user
         ).order_by("-created_at")
-
-        serializer = NotificationSerializer(data, many=True)
-        return Response(serializer.data)
 
 
 class MarkNotificationReadAPI(APIView):

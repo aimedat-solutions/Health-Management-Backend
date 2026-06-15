@@ -9,7 +9,7 @@ from users.permissions import PermissionsManager,IsDoctorUser,IsPatientUser
 from rest_framework import viewsets, permissions,generics,status
 from rest_framework import serializers
 
-from users.filters import DietQuestionFilter,DietPlanMealFilter,LabReportFilter,ExerciseFilter
+from users.filters import DietQuestionFilter,DietPlanMealFilter,LabReportFilter,ExerciseFilter,PatientResponseFilter,PatientExerciseLogFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import OrderingFilter
 from rest_framework.viewsets import ModelViewSet
@@ -93,6 +93,8 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
     serializer_class = PatientResponseSerializer
     permission_classes = [PermissionsManager]
     codename = 'patientresponse'
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = PatientResponseFilter
 
     def get_queryset(self):
         """Return all responses for the logged-in user."""
@@ -742,6 +744,8 @@ class ExerciseLogView(generics.ListCreateAPIView):
     serializer_class = ExerciseLogSerializer
     parser_classes = [JSONParser, MultiPartParser, FormParser]
     codename = 'patientexerciselog'
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = PatientExerciseLogFilter
 
     def get_queryset(self):
         return PatientExerciseLog.objects.filter(

@@ -11,7 +11,7 @@ from patient.serializers import LabReportSerializer, PatientResponseSerializer
 from users.permissions import PermissionsManager,IsDoctorUser, IsSuperAdmin, IsAdmin, IsDoctorOrAdmin
 from rest_framework import viewsets, filters, generics
 from django_filters.rest_framework import DjangoFilterBackend
-from users.filters import CustomUserFilter
+from users.filters import CustomUserFilter, MealPortionFilter, DietPlanFilter
 from users.pagination import Pagination
 from django.db.models.functions import ExtractMonth, ExtractYear, Now
 from django.db.models import IntegerField, F, ExpressionWrapper, Prefetch
@@ -82,7 +82,8 @@ class MealPortionViewSet(viewsets.ModelViewSet):
     queryset = MealPortion.objects.all()
     serializer_class = MealPortionSerializer
     permission_classes = [IsDoctorOrAdmin]
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_class = MealPortionFilter
     search_fields = ["name"]
 
     def _enrich_with_nutrition(self, instance):
@@ -116,7 +117,8 @@ class DietPlanViewSet(viewsets.ModelViewSet):
     queryset = DietPlan.objects.none()
     permission_classes = [PermissionsManager]
     serializer_class = DietPlanCreateSerializer
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_class = DietPlanFilter
     search_fields = ["patient__username", "diet_dates"]
     codename = "dietplan"
 
