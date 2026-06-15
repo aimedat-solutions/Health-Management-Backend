@@ -393,15 +393,9 @@ class QuestionAnswerListCreateView(APIView):
             serializer = QuestionAnswerSerializer(answers, many=True, context={'request': request})
             return Response(serializer.data, status=status.HTTP_200_OK)
         elif user.role == "doctor":
-            patient_ids = CustomUser.objects.filter(
-                role="patient"
-            ).filter(
-                Q(assigned_diets__doctor=user) | Q(patient_exercises__doctor=user)
-            ).values_list("id", flat=True).distinct()
-
-            answers = PatientResponse.objects.filter(
-                user_id__in=patient_ids
-            ).select_related('question', 'user', 'selected_option', 'question__parent').order_by('user_id', 'question__parent_id', 'question_id', 'created_at')
+            answers = PatientResponse.objects.select_related(
+                'question', 'user', 'selected_option', 'question__parent'
+            ).order_by('user_id', 'question__parent_id', 'question_id', 'created_at')
 
             patient_id_filter = request.query_params.get("patient_id")
             if patient_id_filter:
