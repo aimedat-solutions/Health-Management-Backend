@@ -458,8 +458,8 @@ class DietPlanMeal(models.Model):
     class MealType(models.TextChoices):
         BREAKFAST = "breakfast", "Breakfast"
         LUNCH = "lunch", "Lunch"
-        DINNER = "dinner", "Dinner"
         SNACKS = "snacks", "Snacks"
+        DINNER = "dinner", "Dinner"
     diet_plan = models.ForeignKey(DietPlan, on_delete=models.CASCADE, related_name="meals")
     meal_type = models.CharField(max_length=20, choices=MealType.choices)  
     meal_portions = models.ManyToManyField(MealPortion)
