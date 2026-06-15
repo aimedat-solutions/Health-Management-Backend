@@ -8,7 +8,7 @@ from .serializers import ( ExerciseSerializer, ProfileSerializer, HealthEducatio
                         PhoneNumberSerializer,HelpContentSerializer,LegalConsentSerializer,DoctorPatientResponseSerializer,DoctorQuestionResponseSerializer
                         )
 from doctor.serializers import DietPlanReadSerializer, DietPlanCreateSerializer
-from django.db.models import Count, Avg, F, Q
+from django.db.models import Count, Avg, F
 from django.contrib.auth.models import Group
 from rest_framework import views, status
 from rest_framework.response import Response
