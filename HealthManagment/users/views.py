@@ -58,6 +58,7 @@ from .services import (
 load_dotenv()  # reads .env file
 
 class UserRegistrationAPIView(APIView):
+    permission_classes = [permissions.AllowAny]
     serializer_class = UserRegistrationSerializer
     def post(self, request):
         # decrypted_data = {}
@@ -172,6 +173,7 @@ class LogoutAPIView(APIView):
         return response
 
 class SendOrResendSMSAPIView(GenericAPIView):
+    permission_classes = [permissions.AllowAny]
     serializer_class = PhoneNumberSerializer
     
     """
@@ -301,9 +303,8 @@ class DoctorDetailView(generics.RetrieveUpdateDestroyAPIView):
  
     
 class DoctorRegistrationAPIView(APIView):
-    # permission_classes = [PermissionsManager]
+    permission_classes = [IsAdminOrSuperAdmin]
     serializer_class = DoctorRegistrationSerializer
-    # codename = 'user'
     def post(self, request):
         print(request.data)
         serializer = DoctorRegistrationSerializer(data=request.data)
@@ -844,6 +845,7 @@ class WeeklyStepsView(APIView):
 
 
 class AppContentView(APIView):
+    permission_classes = [permissions.AllowAny]
     serializer_class = AppContentSerializer
     def get(self, request):
         content_type = request.GET.get("type")

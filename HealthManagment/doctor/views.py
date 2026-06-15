@@ -216,7 +216,8 @@ class ReviewHealthStatusView(APIView):
     """
     Allows doctors to review the health status of patients.
     """
-    permission_classes = [PermissionsManager,IsDoctorUser]
+    permission_classes = [PermissionsManager, IsDoctorUser]
+    codename = 'healthstatus'
 
     def get(self, request):
         if not hasattr(request.user, 'role') or request.user.role != 'doctor':
@@ -315,12 +316,14 @@ class DoctorAssignExerciseView(APIView):
         
 class DoctorExerciseReviewView(generics.CreateAPIView):
     serializer_class = DoctorExerciseResponseSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [PermissionsManager, IsDoctorUser]
+    codename = 'exercisedate'
     
 
 
 class DoctorDietLogsView(APIView):
     permission_classes = [PermissionsManager, IsDoctorUser]
+    codename = 'dietplan'
 
     def get(self, request):
         queryset = PatientDietQuestion.objects.all().order_by("-date")
@@ -336,6 +339,7 @@ class DoctorDietLogsView(APIView):
 
 class DoctorExerciseLogsView(APIView):
     permission_classes = [PermissionsManager, IsDoctorUser]
+    codename = 'patientexerciselog'
 
     def get(self, request):
         queryset = PatientExerciseLog.objects.all().order_by("-date")

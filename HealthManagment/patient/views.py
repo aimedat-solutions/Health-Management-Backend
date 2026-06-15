@@ -77,6 +77,7 @@ class ViewHealthStatusView(APIView):
     Allows patients to view their overall health status.
     """
     permission_classes = [PermissionsManager]
+    codename = 'healthstatus'
 
     def get(self, request):
         health_status_qs = HealthStatus.objects.filter(patient=request.user)
@@ -549,7 +550,8 @@ class CompleteSkipDietPlanView(APIView):
         )
 
 class CurrentOrNextMealView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, PermissionsManager]
+    codename = 'dietplanmeal'
 
     def get(self, request):
         user = request.user
@@ -672,7 +674,8 @@ class CompleteSkipExerciseView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
     
 class QuestionFlowStatusView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, PermissionsManager]
+    codename = 'question'
 
     def get(self, request):
         user = request.user

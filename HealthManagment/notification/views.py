@@ -49,6 +49,8 @@ class SaveDeviceTokenAPI(APIView):
 
 
 class TestNotification(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request):
         send_notification(
             user=request.user,
