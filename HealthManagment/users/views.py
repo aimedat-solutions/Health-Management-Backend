@@ -8,7 +8,7 @@ from .serializers import ( ExerciseSerializer, ProfileSerializer, HealthEducatio
                         PhoneNumberSerializer,HelpContentSerializer,LegalConsentSerializer,DoctorPatientResponseSerializer,DoctorQuestionResponseSerializer
                         )
 from doctor.serializers import DietPlanReadSerializer, DietPlanCreateSerializer
-from django.db.models import Count,Avg,F
+from django.db.models import Count, Avg, F, Q
 from django.contrib.auth.models import Group
 from rest_framework import views, status
 from rest_framework.response import Response
@@ -394,8 +394,9 @@ class QuestionAnswerListCreateView(APIView):
             return Response(serializer.data, status=status.HTTP_200_OK)
         elif user.role == "doctor":
             patient_ids = CustomUser.objects.filter(
-                role="patient",
-                assigned_diets__doctor=user
+                role="patient"
+            ).filter(
+                Q(assigned_diets__doctor=user) | Q(patient_exercises__doctor=user)
             ).values_list("id", flat=True).distinct()
 
             answers = PatientResponse.objects.filter(
