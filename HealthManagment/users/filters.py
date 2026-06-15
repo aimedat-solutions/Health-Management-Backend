@@ -46,15 +46,22 @@ class LabReportFilter(filters.FilterSet):
     uploaded_by = filters.CharFilter(field_name="uploaded_by__username", lookup_expr='icontains')
     date_of_report = filters.DateFilter(field_name="date_of_report")
     date_of_report_range = filters.DateFromToRangeFilter(field_name="date_of_report")
+    search = filters.CharFilter(method='filter_search')
 
     class Meta:
         model = LabReport
-        fields = ['phone_number', 'patient_name', 'uploaded_by', 'date_of_report', 'date_of_report_range']
+        fields = ['phone_number', 'patient_name', 'uploaded_by', 'date_of_report', 'date_of_report_range', 'search']
 
     def filter_patient_name(self, queryset, name, value):
         return queryset.filter(
             Q(patient__profile__first_name__icontains=value) |
             Q(patient__profile__last_name__icontains=value)
+        )
+
+    def filter_search(self, queryset, name, value):
+        return queryset.filter(
+            Q(report_name__icontains=value) |
+            Q(patient__phone_number__icontains=value)
         )
 
 class CustomUserFilter(filters.FilterSet):
@@ -70,6 +77,10 @@ class CustomUserFilter(filters.FilterSet):
     date_joined__lte = filters.DateFilter(field_name="date_joined", lookup_expr="lte")
     is_verified = filters.BooleanFilter(field_name="is_verified")
     is_first_login = filters.BooleanFilter(field_name="is_first_login")
+    risk = filters.CharFilter(field_name="profile__health_status", lookup_expr='icontains')
+    month = filters.NumberFilter(method='filter_month')
+    status = filters.CharFilter(method='filter_status')
+    filter = filters.CharFilter(method='filter_tab')
 
     class Meta:
         model = CustomUser
@@ -77,8 +88,31 @@ class CustomUserFilter(filters.FilterSet):
             'role', 'email', 'phone_number', 'first_name', 'last_name',
             'age', 'age__gte', 'age__lte',
             'date_joined__gte', 'date_joined__lte',
-            'is_verified', 'is_first_login',
+            'is_verified', 'is_first_login', 'risk', 'month', 'status', 'filter',
         ]
+
+    def filter_month(self, queryset, name, value):
+        from django.utils.timezone import now
+        from datetime import timedelta
+        n = int(value)
+        today = now().date()
+        start = today - timedelta(days=n * 28)
+        end = today - timedelta(days=(n - 1) * 28)
+        return queryset.filter(profile__lmp_date__gte=start, profile__lmp_date__lt=end)
+
+    def filter_status(self, queryset, name, value):
+        if value == 'active':
+            return queryset.filter(initial_question_completed=True)
+        elif value == 'onboarding':
+            return queryset.filter(initial_question_completed=False)
+        return queryset
+
+    def filter_tab(self, queryset, name, value):
+        if value == 'verified':
+            return queryset.filter(is_verified=True)
+        elif value in ('poor', 'critical'):
+            return queryset.filter(profile__health_status__iexact=value)
+        return queryset
 
 class ExerciseFilter(filters.FilterSet):
     class Meta:

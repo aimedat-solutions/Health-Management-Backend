@@ -14,7 +14,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from users.filters import CustomUserFilter, MealPortionFilter, DietPlanFilter
 from users.pagination import Pagination
 from django.db.models.functions import ExtractMonth, ExtractYear, Now
-from django.db.models import IntegerField, F, ExpressionWrapper, Prefetch
+from django.db.models import IntegerField, F, ExpressionWrapper, Prefetch, Q
 from django.utils.timezone import now
 from datetime import date
 class PatientManagementViewSet(viewsets.ModelViewSet):
@@ -28,7 +28,7 @@ class PatientManagementViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = CustomUserFilter
     search_fields = ['profile__first_name', 'profile__last_name', 'email', 'phone_number']
-    ordering_fields = ['profile__first_name', 'age', 'birth_month', 'date_joined']
+    ordering_fields = ['profile__first_name', 'profile__last_name', 'profile__health_status', 'age', 'birth_month', 'date_joined']
     ordering = ['profile__first_name', 'age', 'birth_month', ] 
     codename = 'patientmanagement'
     
@@ -162,9 +162,18 @@ class DietPlanViewSet(viewsets.ModelViewSet):
         return DietPlanCreateSerializer
 
     def perform_create(self, serializer):
-
-        serializer.save(
+        diet_plan = serializer.save(
             doctor=self.request.user
+        )
+
+        # Notify patient when diet plan is assigned
+        from notification.services import send_notification
+        send_notification(
+            user=diet_plan.patient,
+            title="New Diet Plan Assigned",
+            message=f"A new diet plan has been assigned to you by Dr. {self.request.user.profile.first_name or self.request.user.username}",
+            n_type="diet",
+            data={"diet_plan_id": diet_plan.id}
         )
 
     def get_serializer_context(self):
@@ -236,6 +245,17 @@ class DoctorAssignExerciseView(APIView):
                         patient=patient 
                     )
 
+            # Notify patient when exercises are assigned
+            from notification.services import send_notification
+            exercise_names = [get_object_or_404(Exercise, id=eid).title for eid in exercise_ids]
+            send_notification(
+                user=patient,
+                title="New Exercises Assigned",
+                message=f"Exercises assigned: {', '.join(exercise_names)}",
+                n_type="exercise",
+                data={"exercise_ids": exercise_ids}
+            )
+
             return Response({"message": "Exercises assigned successfully."}, status=status.HTTP_201_CREATED)
         
         def get(self, request):
@@ -290,6 +310,9 @@ class DoctorDietLogsView(APIView):
         patient_id = request.query_params.get("patient_id")
         if patient_id:
             queryset = queryset.filter(patient_id=patient_id)
+        phone_number = request.query_params.get("phone_number")
+        if phone_number:
+            queryset = queryset.filter(patient__phone_number__icontains=phone_number)
         serializer = PatientDietQuestionSerializer(queryset, many=True, context={"request": request})
         return Response(serializer.data)
 
@@ -302,5 +325,12 @@ class DoctorExerciseLogsView(APIView):
         patient_id = request.query_params.get("patient_id")
         if patient_id:
             queryset = queryset.filter(patient_id=patient_id)
+        search = request.query_params.get("search")
+        if search:
+            queryset = queryset.filter(
+                Q(patient__profile__first_name__icontains=search) |
+                Q(patient__profile__last_name__icontains=search) |
+                Q(date__icontains=search)
+            )
         serializer = PatientExerciseLogSerializer(queryset, many=True, context={"request": request})
         return Response(serializer.data)
