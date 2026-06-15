@@ -166,8 +166,9 @@ class DietPlanViewSet(viewsets.ModelViewSet):
             doctor=self.request.user
         )
 
-        # Notify patient when diet plan is assigned
         from notification.services import send_notification
+
+        # Notify patient when diet plan is assigned
         send_notification(
             user=diet_plan.patient,
             title="New Diet Plan Assigned",
@@ -175,6 +176,22 @@ class DietPlanViewSet(viewsets.ModelViewSet):
             n_type="diet",
             data={"diet_plan_id": diet_plan.id}
         )
+
+        # Notify doctor when a new patient is assigned (first diet plan for this patient)
+        is_first = DietPlan.objects.filter(
+            doctor=self.request.user,
+            patient=diet_plan.patient
+        ).count() == 1
+
+        if is_first:
+            patient_name = diet_plan.patient.profile.first_name or diet_plan.patient.username
+            send_notification(
+                user=self.request.user,
+                title="New Patient Assigned",
+                message=f"Patient {patient_name} has been assigned to you",
+                n_type="general",
+                data={"patient_id": diet_plan.patient.id}
+            )
 
     def get_serializer_context(self):
 
