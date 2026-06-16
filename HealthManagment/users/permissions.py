@@ -43,16 +43,11 @@ class IsAdmin(permissions.BasePermission):
         return request.user.is_authenticated and request.user.role == "admin"
 
 class IsAdminOrSuperAdmin(permissions.BasePermission):
-    """Allows access to admin and superadmin users. Superadmin has full access, admin can read/add/edit but not delete."""
+    """Allows access to admin and superadmin users."""
     def has_permission(self, request, view):
         if not request.user.is_authenticated:
             return False
-        is_admin = request.user.role == "admin"
-        is_superadmin = request.user.role == "superadmin"
-        
-        if request.method == 'DELETE':
-            return is_superadmin
-        return is_admin or is_superadmin
+        return request.user.role in ("admin", "superadmin")
 
 class IsDoctorUser(permissions.BasePermission):
     """
