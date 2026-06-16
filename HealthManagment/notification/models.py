@@ -9,6 +9,7 @@ class Notification(AuditModel):
         ("exercise", "Exercise"),
         ("report", "Report"),
         ("followup", "Follow-up"),
+        ("onboarding", "Onboarding"),
         ("general", "General"),
     ]
 

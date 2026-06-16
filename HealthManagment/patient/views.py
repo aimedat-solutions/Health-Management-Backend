@@ -229,6 +229,20 @@ class PatientResponseViewSet(viewsets.ModelViewSet):
         # user.is_first_login = False
         user.last_question_answered_at = timezone.now().date()
         user.save()
+
+        # Notify all doctors that a new patient has onboarded
+        from notification.services import send_notification
+        patient_name = getattr(getattr(user, 'profile', None), 'first_name', None) or user.username
+        doctors = CustomUser.objects.filter(role='doctor')
+        for doctor in doctors:
+            send_notification(
+                user=doctor,
+                title="New Patient Onboarded",
+                message=f"Patient {patient_name} has completed onboarding and is ready for diet plan assignment.",
+                n_type="onboarding",
+                data={"patient_id": user.id}
+            )
+
         return Response({
             "message": "All responses saved successfully!",
             # "saved_responses": saved_responses
