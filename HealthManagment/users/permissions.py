@@ -23,6 +23,11 @@ class PermissionsManager(permissions.BasePermission):
         prefixer = method_permission_map.get(request.method)
         if prefixer is None:
             return True
+
+        # Admins and Superadmins bypass group permission checks
+        if request.user.role in ("admin", "superadmin"):
+            return True
+
         request_codename = f"{prefixer}_{view.codename}"
         user_groups = request.user.groups.all()
 

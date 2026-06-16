@@ -260,16 +260,16 @@ class UserListCreateView(generics.ListCreateAPIView):
     codename = 'user'
     
 class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
-    """Superadmins and Admins can manage users"""
+    """Admins and Superadmins can manage users"""
     queryset = CustomUser.objects.all()
     serializer_class = CustomUserDetailsSerializer
-    permission_classes = [IsSuperAdmin]
+    permission_classes = [IsAdminOrSuperAdmin]
     
 class AdminCreateView(generics.CreateAPIView):
-    """Only Superadmins can create Admin users"""
+    """Admins and Superadmins can create Admin users"""
     queryset = CustomUser.objects.filter(role='admin')
     serializer_class = CustomUserDetailsSerializer
-    permission_classes = [IsSuperAdmin]
+    permission_classes = [IsAdminOrSuperAdmin]
 
     def perform_create(self, serializer):
         user = serializer.save(role="admin") 
