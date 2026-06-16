@@ -901,6 +901,12 @@ class HealthEducationViewSet(viewsets.ModelViewSet):
             if not is_admin:
                 qs = qs.filter(is_active=True)
         return qs
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
     
 class HelpContentViewSet(viewsets.ModelViewSet):
     serializer_class = HelpContentSerializer
