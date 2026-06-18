@@ -706,7 +706,7 @@ class AppContent(AuditModel):
 class HealthEducation(AuditModel):
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
-    pdf_file = models.FileField(upload_to="health_education/pdf/")
+    pdf_file = models.FileField(upload_to="health_education/pdf/", null=True, blank=True)
     order = models.PositiveIntegerField(default=0)
     category = models.CharField(
         max_length=100,

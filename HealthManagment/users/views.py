@@ -901,6 +901,10 @@ class HealthEducationViewSet(viewsets.ModelViewSet):
             if not is_admin:
                 qs = qs.filter(is_active=True)
         return qs
+    
+    def update(self, request, *args, **kwargs):
+        kwargs["partial"] = True
+        return super().update(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, updated_by=self.request.user)

@@ -514,6 +514,13 @@ class HealthEducationSerializer(serializers.ModelSerializer):
     class Meta:
         model = HealthEducation
         fields = "__all__"
+        extra_kwargs = {
+            "pdf_file": {
+                "required": False,
+                "allow_null": True,
+            }
+        } 
+
 
     def get_pdf_url(self, obj):
         request = self.context.get("request")
