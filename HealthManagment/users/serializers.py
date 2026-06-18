@@ -272,7 +272,14 @@ class ExerciseSerializer(serializers.ModelSerializer):
             'id', 'title', 'image_content', 'description', 'video_content',
             "created_at", "created_by", "diabetes_safe", "updated_at", "updated_by"
         ]
-        read_only_fields = ['created_at', 'updated_at']
+        read_only_fields = [
+            "id",
+            "created_at",
+            "created_by",
+            "updated_at",
+            "updated_by",
+            "diabetes_safe",
+        ]
 
 class ExerciseDateSerializer(serializers.ModelSerializer):
     exercise_details = ExerciseSerializer(source="exercise", read_only=True)

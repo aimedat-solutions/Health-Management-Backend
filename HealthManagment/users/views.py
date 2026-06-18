@@ -379,6 +379,12 @@ class ExerciseDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [PermissionsManager]
     codename = 'exercise'
 
+    def update(self, request, *args, **kwargs):
+        kwargs["partial"] = True
+        return super().update(request, *args, **kwargs)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
     
 
 class QuestionAnswerListCreateView(APIView):
