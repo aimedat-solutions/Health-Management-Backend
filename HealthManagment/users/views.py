@@ -352,11 +352,14 @@ class ExerciseListCreateView(generics.ListCreateAPIView):
     queryset = Exercise.objects.all()
     serializer_class = ExerciseSerializer
     permission_classes = [PermissionsManager]
-    filter_backends = [DjangoFilterBackend]
+    filter_backends = [DjangoFilterBackend, drf_filters.SearchFilter]
     filterset_class = ExerciseFilter
-    serch_field = ['title']
+    search_fields = ['title']
     codename = 'exercise'
     
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user)
+
     # def get_queryset(self):
     #     return ExerciseDate.objects.filter(
     #         exercise__user=self.request.user
@@ -926,6 +929,9 @@ class HelpContentViewSet(viewsets.ModelViewSet):
         if self.action in ('create', 'update', 'partial_update', 'destroy'):
             return [IsAdminOrSuperAdmin()]
         return []
+    def update(self, request, *args, **kwargs):
+        kwargs["partial"] = True
+        return super().update(request, *args, **kwargs)
 
     def get_queryset(self):
         qs = HelpContent.objects.all().order_by("step_order")

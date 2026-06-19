@@ -721,6 +721,8 @@ class HelpContent(AuditModel):
     CONTENT_TYPES = [
         ("app_tour", "App Tour"),
         ("user_manual", "User Manual"),
+        ('faq', 'FAQ'),
+        ('guide', 'Guide'),
     ]
 
     screen_name = models.CharField(
@@ -733,6 +735,7 @@ class HelpContent(AuditModel):
     )
     title = models.CharField(max_length=255)
     description = models.TextField()
+    pdf_file = models.FileField(upload_to="help_content/pdf/", null=True, blank=True)
     step_order = models.PositiveIntegerField()
     is_active = models.BooleanField(default=True)
 

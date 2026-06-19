@@ -121,6 +121,7 @@ class CustomUserDetailsSerializer(serializers.ModelSerializer):
             "updated_at",
             "updated_by",
         )
+        read_only_fields = ("created_by", "updated_by", "created_at", "updated_at")
 
     def get_first_name(self, obj):
         return getattr(obj.profile, "first_name", None)
@@ -265,21 +266,31 @@ class DietPlanSerializer(serializers.ModelSerializer):
         return "pending"
 
 class ExerciseSerializer(serializers.ModelSerializer):
-       diabetes_safe = serializers.BooleanField(read_only=True)
-       class Meta:
+    class Meta:
         model = Exercise
-        fields = [
-            'id', 'title', 'image_content', 'description', 'video_content',
-            "created_at", "created_by", "diabetes_safe", "updated_at", "updated_by"
-        ]
-        read_only_fields = [
-            "id",
-            "created_at",
-            "created_by",
-            "updated_at",
-            "updated_by",
-            "diabetes_safe",
-        ]
+        fields = "__all__"
+        extra_kwargs = {
+            "image_content": {
+                "required": False,
+                "allow_null": True
+            },
+            "video_content": {
+                "required": False,
+                "allow_null": True
+            }
+        }
+
+    def to_internal_value(self, data):
+        mutable_data = data.copy() if hasattr(data, 'copy') else data
+        
+        for field in ['image_content', 'video_content']:
+            if field in mutable_data:
+                val = mutable_data[field]
+                # If the frontend sends back a URL string, remove it so it doesn't fail file validation
+                if isinstance(val, str) and (val.startswith('http') or val.startswith('/')):
+                    mutable_data.pop(field)
+                    
+        return super().to_internal_value(mutable_data)
 
 class ExerciseDateSerializer(serializers.ModelSerializer):
     exercise_details = ExerciseSerializer(source="exercise", read_only=True)
@@ -538,10 +549,24 @@ class HealthEducationSerializer(serializers.ModelSerializer):
         return None
 
 class HelpContentSerializer(serializers.ModelSerializer):
+    pdf_url = serializers.SerializerMethodField()
     class Meta:
         model = HelpContent
         fields = "__all__"
-
+        extra_kwargs = {
+            "pdf_file": {
+                "required": False,
+                "allow_null": True,
+            }
+        }
+        
+    def get_pdf_url(self, obj):
+        request = self.context.get("request")
+        if obj.pdf_file:
+            if request:
+                return request.build_absolute_uri(obj.pdf_file.url)
+            return obj.pdf_file.url
+        return None
 
 class StepSyncSerializer(serializers.Serializer):
     date = serializers.DateField()

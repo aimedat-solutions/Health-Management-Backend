@@ -16,3 +16,5 @@ users/migrations/
 /mediafiles
 .vscode
  ../venv/
+.opencode/
+prod_cookies.txt

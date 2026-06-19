@@ -55,9 +55,6 @@ class MealPortionSerializer(serializers.ModelSerializer):
         model = MealPortion
         fields = "__all__"
         read_only_fields = [
-            "calories", "protein", "carbohydrates", "fat",
-            "fiber", "sugar", "saturated_fat", "trans_fat",
-            "cholesterol", "sodium", "serving_unit", "serving_qty",
             "ai_generated",
         ]
 
