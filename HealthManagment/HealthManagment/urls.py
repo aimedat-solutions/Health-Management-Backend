@@ -40,7 +40,6 @@ urlpatterns = [
     path('patient/', include('patient.urls')), 
     
     path("notifications/", include("notification.urls")),
-    path("api/v1/", include("ai_assistant.api.urls")),
 ]
 
 if settings.DEBUG:
