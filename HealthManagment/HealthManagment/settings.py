@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'doctor',
     'patient',
     'notification',
+    'ai_assistant',
 ]
 
 MIDDLEWARE = [
