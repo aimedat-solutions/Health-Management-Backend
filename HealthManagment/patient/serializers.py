@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from users.models import CustomUser, ExerciseDate, LabReport, Question, HealthStatus,PatientResponse, PatientDietQuestion, PatientExerciseLog, ExerciseLogEntry, DietPlanStatus, ExerciseStatus,DietPlanMeal,DietPlanDate,DietPlanCompletedPortion,ExtraMeal
+from users.models import CustomUser, ExerciseDate, LabReport, LabReportEntry, Question, HealthStatus, PatientResponse, PatientDietQuestion, PatientExerciseLog, ExerciseLogEntry, DietPlanStatus, ExerciseStatus, DietPlanMeal, DietPlanDate, DietPlanCompletedPortion, ExtraMeal, Profile
 from users.serializers import OptionSerializer
 from django.utils import timezone
 from datetime import date
@@ -161,8 +161,15 @@ class ExtraMealSerializer(serializers.ModelSerializer):
         model = ExtraMeal
         fields = "__all__"
     
+class LabReportEntrySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LabReportEntry
+        fields = ['id', 'test_name', 'test_value', 'unit', 'reference_range', 'is_abnormal', 'notes']
+
+
 class LabReportSerializer(serializers.ModelSerializer):
     message = serializers.SerializerMethodField()
+    entries = LabReportEntrySerializer(many=True, read_only=True)
     class Meta:
         model = LabReport
         fields = '__all__'
@@ -227,6 +234,14 @@ class DietQuestionSerializer(serializers.ModelSerializer):
         if obj.date:
             return obj.date.date().isoformat() if hasattr(obj.date, 'date') else obj.date
         return None
+    
+    def create(self, validated_data):
+        instance = super().create(validated_data)
+        if validated_data.get('diet_type'):
+            profile, _ = Profile.objects.get_or_create(user=instance.patient)
+            profile.diet_type = validated_data['diet_type']
+            profile.save(update_fields=['diet_type'])
+        return instance
 class ExerciseStatusSerializer(serializers.ModelSerializer):
     reason_audio = serializers.FileField(required=False)
 

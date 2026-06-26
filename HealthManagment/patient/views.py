@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from users.models import ExerciseDate, LabReport, Question,PatientResponse,CustomUser,PatientDietQuestion, PatientExerciseLog, Option, DietPlanStatus,Exercise,ExerciseStatus,HealthStatus,DietPlanDate,DietPlanMeal,DietPlan,ExtraMeal, DietPlanCompletedPortion,MealPortion
+from users.models import ExerciseDate, LabReport, Question, PatientResponse, CustomUser, PatientDietQuestion, PatientExerciseLog, Option, DietPlanStatus, Exercise, ExerciseStatus, HealthStatus, DietPlanDate, DietPlanMeal, DietPlan, ExtraMeal, DietPlanCompletedPortion, MealPortion, Profile
 from .serializers import ( PatientResponseSerializer,EmptyLabReportSerializer, HealthStatusSerializer, LabReportSerializer, 
                           QuestionSerializer, DietQuestionSerializer, DietPlanSerializer, DietPlanStatusSerializer, CurrentMealSerializer, BulkPatientResponseSerializer,
                           ExerciseStatusSerializer, AssignedExerciseSerializer, ExerciseLogSerializer)
@@ -336,20 +336,6 @@ class DietQuestionsView(generics.ListCreateAPIView):
             "can_submit": True
         }, status=200)
 
-        return Response({
-            "message": "Here are your diet details.",
-            "diet_logs": DietQuestionSerializer(
-                queryset,
-                many=True,
-                context={"request": request}
-            ).data,
-            "last_entry": DietQuestionSerializer(
-                last_diet,
-                context={"request": request}
-            ).data,
-            "ask_diet_question": is_due
-        }, status=200)
-
     # ================= POST =================
     def post(self, request):
         user = request.user
@@ -366,8 +352,11 @@ class DietQuestionsView(generics.ListCreateAPIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        diet_type = request.data.get("diet_type")
+
         diet = PatientDietQuestion.objects.create(
             patient=user,
+            diet_type=diet_type,
             breakfast=request.data.get("breakfast"),
             lunch=request.data.get("lunch"),
             eveningSnack=request.data.get("eveningSnack"),
@@ -380,6 +369,11 @@ class DietQuestionsView(generics.ListCreateAPIView):
 
         user.is_first_login = False
         user.save()
+
+        if diet_type:
+            profile, _ = Profile.objects.get_or_create(user=user)
+            profile.diet_type = diet_type
+            profile.save(update_fields=['diet_type'])
 
         return Response({
             "message": "Great! Your diet details have been saved.",

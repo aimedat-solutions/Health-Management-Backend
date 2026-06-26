@@ -166,6 +166,7 @@ class Exercise(AuditModel):
     description = models.TextField()
     image_content = models.ImageField(upload_to='exercise_images/', null=True, blank=True)
     video_content = models.FileField(upload_to='exercise_videos/', null=True, blank=True)
+    video_url = models.CharField(max_length=5000, null=True, blank=True)
     
     trimester_min = models.PositiveSmallIntegerField(default=1)
     trimester_max = models.PositiveSmallIntegerField(default=3)
@@ -316,6 +317,9 @@ class Profile(AuditModel):
     class GenderChoices(models.TextChoices):
         MALE = 'male', 'Male'
         FEMALE = 'female', 'Female'
+    class DietType(models.TextChoices):
+        VEG = 'vegetarian', 'Vegetarian'
+        NON_VEG = 'non_vegetarian', 'Non-Vegetarian'
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='profile')
     first_name = models.CharField(null=True, blank=True, max_length=100)
     last_name = models.CharField(null=True, blank=True, max_length=100)
@@ -329,6 +333,7 @@ class Profile(AuditModel):
     weight = models.FloatField(help_text="Weight in kg", null=True, blank=True)
     blood_pressure = models.JSONField(null=True, blank=True, default=dict, help_text='{"systolic": 120, "diastolic": 80, "unit": "mmHg"}')
     lmp_date = models.DateField(null=True, blank=True, help_text="Last Menstrual Period")
+    diet_type = models.CharField(max_length=20, null=True, blank=True, choices=DietType.choices, help_text="Dietary preference: Vegetarian or Non-Vegetarian")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -525,6 +530,8 @@ class PatientDietQuestion(AuditModel):
     patient = models.ForeignKey(CustomUser, on_delete=models.CASCADE, limit_choices_to={'role': 'patient'})
     date = models.DateField(default=timezone.now)
 
+    diet_type = models.CharField(max_length=20, null=True, blank=True, choices=Profile.DietType.choices, help_text="Dietary preference: Vegetarian or Non-Vegetarian")
+
     breakfast = models.TextField(null=True, blank=True)
     lunch = models.TextField(null=True, blank=True)
     eveningSnack = models.TextField(null=True, blank=True)
@@ -616,9 +623,24 @@ class LabReport(AuditModel):
 
     def __str__(self):
         return f"{self.report_name} for {self.patient.username} on {self.date_of_report}"
-    
-    
-    
+
+
+class LabReportEntry(models.Model):
+    """
+    Stores individual test entries for a lab report, entered by doctors in tabulated form.
+    """
+    lab_report = models.ForeignKey(LabReport, on_delete=models.CASCADE, related_name="entries")
+    test_name = models.CharField(max_length=200, help_text="Name of the lab test (e.g. Hemoglobin)")
+    test_value = models.CharField(max_length=100, help_text="Test result value (e.g. 13.5)")
+    unit = models.CharField(max_length=50, null=True, blank=True, help_text="Unit of measurement (e.g. g/dL)")
+    reference_range = models.CharField(max_length=100, null=True, blank=True, help_text="Normal reference range (e.g. 12-16)")
+    is_abnormal = models.BooleanField(default=False, help_text="Flag if result is outside normal range")
+    notes = models.TextField(null=True, blank=True, help_text="Additional notes/comments")
+
+    def __str__(self):
+        return f"{self.test_name}: {self.test_value} {self.unit or ''}"
+
+
 ######################################################################## Health Status Model ################################################################################################
 
 class HealthStatus(AuditModel):

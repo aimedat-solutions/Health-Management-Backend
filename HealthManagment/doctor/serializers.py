@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from users.models import CustomUser, Profile, DietPlan, MealPortion, DietPlanDate, DietPlanMeal, DietPlanStatus, DietPlanCompletedPortion, ExtraMeal, HealthStatus,DoctorExerciseResponse,PatientDietQuestion,PatientExerciseLog
+from users.models import CustomUser, Profile, DietPlan, MealPortion, DietPlanDate, DietPlanMeal, DietPlanStatus, DietPlanCompletedPortion, ExtraMeal, HealthStatus, DoctorExerciseResponse, PatientDietQuestion, PatientExerciseLog, LabReportEntry, LabReport
 from django.utils import timezone
 class HealthStatusSerializer(serializers.ModelSerializer):
     class Meta:
@@ -18,7 +18,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             "first_name", "last_name", "date_of_birth", "age",
             "gender", "occupation", "address", "specialization",
             "profile_image", "height", "weight", "lmp_date", "blood_pressure",
-            "pregnancy_month", "gestational_age", "edd",
+            "pregnancy_month", "gestational_age", "edd", "diet_type",
         ]
 class PatientSerializer(serializers.ModelSerializer):
     profile = ProfileSerializer(read_only=True)
@@ -297,3 +297,14 @@ class PatientExerciseLogSerializer(serializers.ModelSerializer):
     def get_logs(self, obj):
         from patient.serializers import ExerciseLogEntrySerializer
         return ExerciseLogEntrySerializer(obj.entries.all(), many=True).data
+
+
+class DoctorLabReportEntrySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LabReportEntry
+        fields = ['id', 'lab_report', 'test_name', 'test_value', 'unit', 'reference_range', 'is_abnormal', 'notes']
+        read_only_fields = ['id']
+
+
+class DoctorLabReportEntryListSerializer(serializers.ListSerializer):
+    child = DoctorLabReportEntrySerializer()

@@ -7,7 +7,7 @@ from .utils import send_otp, verify_otp
 from .models import ( DailyStepCount,Question, Profile,DietPlan,Exercise, CustomUser, Option, PatientResponse,
                     LabReport,DietPlanStatus,ExerciseDate,AppContent,UserLegalConsent,HealthEducation,HelpContent
                     )
-import re,os
+import re,os,urllib.parse
 from django.utils.text import slugify
 from rest_framework.exceptions import ValidationError
 from django.utils.crypto import get_random_string
@@ -158,7 +158,7 @@ class ProfileSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'role', 'phone_number', 'email', 'first_name', 'last_name', 'profile_image', 'date_of_birth', 'age', 'gender', 'occupation',
             'address', 'specialization', 'height', 'weight', 'blood_pressure', 'verified',
-            'lmp_date', 'pregnancy_details',
+            'lmp_date', 'pregnancy_details', 'diet_type',
         ]
     
     def get_pregnancy_details(self, obj):
@@ -277,20 +277,30 @@ class ExerciseSerializer(serializers.ModelSerializer):
             "video_content": {
                 "required": False,
                 "allow_null": True
-            }
+            },
+            "video_url": {
+                "required": False,
+                "allow_null": True,
+                "allow_blank": True,
+            },
         }
 
     def to_internal_value(self, data):
-        mutable_data = data.copy() if hasattr(data, 'copy') else data
-        
+        mutable = data.copy() if hasattr(data, 'copy') else data
+
         for field in ['image_content', 'video_content']:
-            if field in mutable_data:
-                val = mutable_data[field]
-                # If the frontend sends back a URL string, remove it so it doesn't fail file validation
+            if field in mutable:
+                val = mutable[field]
                 if isinstance(val, str) and (val.startswith('http') or val.startswith('/')):
-                    mutable_data.pop(field)
-                    
-        return super().to_internal_value(mutable_data)
+                    mutable.pop(field)
+
+        return super().to_internal_value(mutable)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.video_url:
+            data['video_content'] = instance.video_url
+        return data
 
 class ExerciseDateSerializer(serializers.ModelSerializer):
     exercise_details = ExerciseSerializer(source="exercise", read_only=True)

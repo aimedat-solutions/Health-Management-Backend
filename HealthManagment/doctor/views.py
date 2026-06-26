@@ -2,10 +2,10 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
-from users.models import CustomUser, DietPlan, MealPortion, Exercise, LabReport, PatientResponse, PatientDietQuestion, PatientExerciseLog, DietPlanDate,ExerciseDate, ExerciseStatus
+from users.models import CustomUser, DietPlan, MealPortion, Exercise, LabReport, LabReportEntry, PatientResponse, PatientDietQuestion, PatientExerciseLog, DietPlanDate, ExerciseDate, ExerciseStatus
 from django.shortcuts import get_object_or_404
 from users.nutrition_service import fetch_nutrition_data
-from .serializers import PatientSerializer, DietPlanCreateSerializer, MealPortionSerializer,DietPlanReadSerializer,PatientDietQuestionSerializer,PatientExerciseLogSerializer,ExcerciseDateAssignSerializer,DoctorExerciseResponseSerializer
+from .serializers import PatientSerializer, DietPlanCreateSerializer, MealPortionSerializer, DietPlanReadSerializer, PatientDietQuestionSerializer, PatientExerciseLogSerializer, ExcerciseDateAssignSerializer, DoctorExerciseResponseSerializer, DoctorLabReportEntrySerializer
 from users.serializers import ExerciseDateSerializer
 from patient.serializers import LabReportSerializer, PatientResponseSerializer
 from users.permissions import PermissionsManager,IsDoctorUser, IsSuperAdmin, IsAdmin, IsDoctorOrAdmin
@@ -355,3 +355,24 @@ class DoctorExerciseLogsView(APIView):
             )
         serializer = PatientExerciseLogSerializer(queryset, many=True, context={"request": request})
         return Response(serializer.data)
+
+
+class LabReportEntryViewSet(viewsets.ModelViewSet):
+    """
+    Allows doctors to manage tabulated lab report entries (test results).
+    """
+    permission_classes = [PermissionsManager, IsDoctorOrAdmin]
+    serializer_class = DoctorLabReportEntrySerializer
+    codename = 'labreport'
+
+    def get_queryset(self):
+        qs = LabReportEntry.objects.all()
+        lab_report_id = self.kwargs.get("lab_report_id") or self.request.query_params.get("lab_report_id")
+        if lab_report_id:
+            qs = qs.filter(lab_report_id=lab_report_id)
+        return qs
+
+    def perform_create(self, serializer):
+        lab_report_id = self.kwargs.get("lab_report_id") or self.request.data.get("lab_report")
+        lab_report = get_object_or_404(LabReport, id=lab_report_id)
+        serializer.save(lab_report=lab_report)
